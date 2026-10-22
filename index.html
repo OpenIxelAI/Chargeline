@@ -358,6 +358,11 @@ dialog::backdrop{background:rgba(5,10,15,.45)}
 .frow small{display:block;color:var(--ink-3);font-size:12px}
 .frow input,.frow select{width:100%;height:38px;border:1px solid var(--line);border-radius:10px;background:var(--card);padding:0 10px;font-size:14px}
 .frow.stack{grid-template-columns:1fr;gap:6px}
+.keyrow{display:flex;gap:8px;align-items:center}
+.keyrow input{flex:1;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px}
+.keystat{font-size:13px;color:var(--ink-2);min-height:1.3em}
+.keystat.ok{color:var(--volt);font-weight:700}
+.keystat.bad{color:var(--warn)}
 .frow input[type=checkbox]{width:20px;height:20px;justify-self:end;accent-color:var(--volt)}
 .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .dlg-f{padding:12px 20px calc(14px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);display:flex;justify-content:flex-end}
@@ -515,7 +520,11 @@ dialog::backdrop{background:rgba(5,10,15,.45)}
       </fieldset>
       <fieldset>
         <legend>Charger data</legend>
-        <div class="frow" style="grid-template-columns:1fr"><label for="setKey">NLR / AFDC API key<small>The shared DEMO_KEY allows a few trips per hour. A free personal key takes a minute: <a href="https://developer.nlr.gov/signup/" target="_blank" rel="noopener">developer.nlr.gov/signup</a></small><input id="setKey" type="text" autocomplete="off" spellcheck="false" placeholder="DEMO_KEY" data-set="apiKey" style="margin-top:6px"></label></div>
+        <div class="frow stack">
+          <label for="setKey">NLR / AFDC API key<small>The shared DEMO_KEY allows a few trips per hour. A free personal key takes a minute: <a href="https://developer.nlr.gov/signup/" target="_blank" rel="noopener">developer.nlr.gov/signup</a>. It’s saved in this browser only, so a second device or copy of the app needs it entered too.</small></label>
+          <div class="keyrow"><input id="setKey" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste your 40-character key" data-set="apiKey"><button type="button" class="btn small" id="checkKey">Check key</button></div>
+          <div class="keystat" id="keyStat" role="status" aria-live="polite"></div>
+        </div>
       </fieldset>
     </div>
     <div class="dlg-f"><button class="btn primary" value="close" type="submit">Done</button></div>
@@ -798,15 +807,30 @@ async function osrmRoute(points, alternatives = false) {
 
 /* Chargers: DOE Alternative Fuels Data Center via NLR (formerly NREL) */
 const NLR = ['https://developer.nlr.gov', 'https://developer.nrel.gov'];
-const apiKey = () => (S.apiKey || '').trim() || 'DEMO_KEY';
+/* Keys are 40 letters and numbers; pull one out of whatever got pasted (quotes, spaces, "Your API key is …") */
+function cleanKey(v) {
+  const t = String(v || '').trim().replace(/^["'`]+|["'`]+$/g, '');
+  const m = /[A-Za-z0-9]{40}/.exec(t);
+  return m ? m[0] : t.replace(/\s+/g, '');
+}
+const apiKey = () => cleanKey(S.apiKey) || 'DEMO_KEY';
+const keyName = k => k === 'DEMO_KEY' ? 'the shared DEMO_KEY' : `your key ending in ${k.slice(-4)}`;
 async function nlr(path, { query = {}, body = null } = {}) {
-  const qs = new URLSearchParams({ api_key: apiKey(), ...query });
+  const key = apiKey();
+  const qs = new URLSearchParams({ api_key: key, ...query });
   let last;
   for (const h of NLR) {
     try {
       const opts = body ? { method: 'POST', body: new URLSearchParams(body) } : {};
       return await fetchJSON(`${h}/api/alt-fuel-stations/v1/${path}?${qs}`, opts, 60000);
     } catch (e) {
+      e.key = key;
+      e.host = h.replace('https://', '');
+      try {
+        const j = JSON.parse(e.body || 'null');
+        if (j && j.error) { e.code = j.error.code; e.apiMessage = j.error.message; }
+        else if (j && j.errors) e.apiMessage = [].concat(j.errors).join(' ');
+      } catch { /* body wasn't JSON */ }
       last = e;
       if (e.status && e.status < 500) break; // the server answered; don't hide the real error
     }
@@ -814,8 +838,14 @@ async function nlr(path, { query = {}, body = null } = {}) {
   throw last;
 }
 function nlrError(e) {
-  if (e && e.status === 429) return 'The shared charger-data key hit its hourly limit. Add your free NLR API key in Settings to keep going.';
-  if (e && (e.status === 401 || e.status === 403)) return 'The charger-data service rejected the API key. Check it in Settings, or clear it to use DEMO_KEY.';
+  const key = (e && e.key) || apiKey(), demo = key === 'DEMO_KEY', code = e && e.code ? ` (${e.code})` : '';
+  if (e && e.status === 429) return demo
+    ? 'The shared DEMO_KEY is out of requests for now. Everyone on your network shares it, so it runs out fast. Add your own free key in Settings.'
+    : `${keyName(key)[0].toUpperCase() + keyName(key).slice(1)} hit its hourly limit${code}. Wait a few minutes, then try again.`;
+  if (e && (e.status === 401 || e.status === 403)) return demo
+    ? `The charger service refused the shared DEMO_KEY${code}. Add your own free key in Settings.`
+    : `The charger service didn’t accept ${keyName(key)}${code}. Copy it again from the signup email or page. It should be 40 letters and numbers.`;
+  if (e && e.status) return `The charger service answered with an error (HTTP ${e.status}${code}). Try again in a minute.`;
   return 'Couldn’t reach the charger database (NLR Alternative Fuels Data Center). Check your connection and try again.';
 }
 
@@ -1158,11 +1188,11 @@ function parseStation(r) {
   const isTeslaDest = /tesla destination/i.test(net);
   const isTeslaSC = /tesla/i.test(net) && !isTeslaDest;
   const dc = new Map(), ac = new Map();
+  const listed = new Set((r.ev_connector_types || []).map(t => String(t).toUpperCase()));
   let sawUnits = false;
   for (const u of r.ev_charging_units || []) {
     const con = u && u.connectors;
     if (!con || typeof con !== 'object') continue;
-    sawUnits = true;
     const lvl = String(u.charging_level || '').toLowerCase();
     const unitDC = /dc|fast|3/.test(lvl);
     const entries = Array.isArray(con) ? con.map(c => [c.connector_type || c.type || c.name, c]) : Object.entries(con);
@@ -1170,6 +1200,10 @@ function parseStation(r) {
       if (!k0) continue;
       const k = String(k0).toUpperCase();
       const kw = Number(v && v.power_kw) || 0, ports = Number(v && v.port_count) || 0;
+      /* Every unit lists all connector types; only the ones with ports or power are really there */
+      if (ports <= 0 && kw <= 0) continue;
+      if (listed.size && !listed.has(k)) continue;
+      sawUnits = true;
       const isDC = unitDC || k === 'J1772COMBO' || k === 'CHADEMO' || (k === 'TESLA' && !lvl && isTeslaSC);
       const m = isDC ? dc : ac, prev = m.get(k) || { kw: 0, ports: 0 };
       m.set(k, { kw: Math.max(prev.kw, kw), ports: prev.ports + ports });
@@ -1473,6 +1507,7 @@ async function analyzeBase(token) {
   await computePlan(token);
 }
 async function loadStations(route, prof, corridor) {
+  st.keyUsed = apiKey();
   const line = simplifyTo(route.coords, 600);
   const key = corridor + '|' + line.length + '|' + line.map(p => p[0].toFixed(3) + ',' + p[1].toFixed(3)).join(';');
   let raw = stationCache.get(key);
@@ -1920,7 +1955,10 @@ function googleButtons() {
 }
 function planBanners() {
   const meta = st.meta, sim = st.sim, out = [];
-  if (st.stationErr) out.push(`<div class="banner">${ic('warn')}<div><p><b>Charger data didn’t load.</b> ${esc(nlrError(st.stationErr))}${meta.feasible ? '' : ' Charging stops can’t be planned until it does.'}</p><p><button class="link-btn" data-act="retry">Try again</button></p></div></div>`);
+  if (st.stationErr) {
+    const e = st.stationErr, keyIssue = e.status === 429 || e.status === 401 || e.status === 403;
+    out.push(`<div class="banner">${ic('warn')}<div><p><b>Charger data didn’t load.</b> ${esc(nlrError(e))}${meta.feasible ? '' : ' Charging stops can’t be planned until it does.'}</p>${e.apiMessage ? `<p class="muted" style="font-size:12px">${esc(e.host || 'Server')} said: “${esc(e.apiMessage)}”</p>` : ''}<p>${keyIssue ? '<button class="link-btn" data-act="open-settings">Enter API key</button> · ' : ''}<button class="link-btn" data-act="retry">Try again</button></p></div></div>`);
+  }
   if (!meta.feasible && meta.gap && !st.stationErr) {
     const fullRange = (100 - +S.reserve) / 100 * car().kwh * 1000 / car().whmi;
     out.push(`<div class="banner">${ic('warn')}<div><p><b>This trip doesn’t work with your adapters yet.</b> There’s no usable fast charger for ${fmtMi(meta.gap.gap)} (mile ${Math.round(meta.gap.from)} to ${Math.round(meta.gap.to)}). Your highway range from 100% is about ${fmtMi(fullRange)}.</p><p>Try starting with more charge, turning on another adapter in Settings, or tap a charger on the map to add it yourself.</p></div></div>`);
@@ -2332,6 +2370,7 @@ document.addEventListener('click', async e => {
     }
     case 'auto': st.custom = null; replan(0); break;
     case 'retry': { const token = ++planToken; analyzeBase(token); break; }
+    case 'open-settings': openSettings(true); break;
     case 'tab': st.listTab = b.dataset.tab; st.listAll = false; renderAll(); break;
     case 'list-all': st.listAll = true; renderAll(); break;
     case 'load-l2': loadL2(); break;
@@ -2498,6 +2537,7 @@ $('#settingsForm').addEventListener('change', e => {
   const el = e.target.closest('[data-set]');
   if (!el) return;
   const path = el.dataset.set;
+  if (path === 'apiKey') { saveKey(); refreshAfterKeyChange(); return; }
   if (path === 'corridor') S.corridor = +el.value;
   else setByPath(path, el.type === 'checkbox' ? el.checked : el.value);
   saveSettings();
@@ -2506,13 +2546,57 @@ $('#settingsForm').addEventListener('change', e => {
   if (path === 'theme') { applyTheme(); return; }
   if (path === 'colorRoute') { drawRoutes(); return; }
   if (path === 'voice' || path === 'simulate') { if (st.sim) renderAll(); return; }
-  if (path === 'corridor' || path === 'apiKey' || path === 'weather') { if (st.base) { const token = ++planToken; analyzeBase(token); } return; }
+  if (path === 'corridor' || path === 'weather') { if (st.base) { const token = ++planToken; analyzeBase(token); } return; }
   replan(0);
 });
-const openSettings = () => { syncSettingsForm(); $('#settingsDlg').showModal(); };
-$('#settingsBtn').addEventListener('click', openSettings);
-$('#compactSettings').addEventListener('click', openSettings);
-$('#carChip').addEventListener('click', openSettings);
+/* The key is saved on every keystroke, so closing Settings any way (Done, ×, Esc, tapping outside) keeps it */
+function saveKey() {
+  const input = $('#setKey');
+  S.apiKey = cleanKey(input.value);
+  saveSettings();
+  return S.apiKey;
+}
+$('#setKey').addEventListener('input', () => { saveKey(); $('#keyStat').className = 'keystat'; $('#keyStat').textContent = keyStatusText(); });
+$('#setKey').addEventListener('blur', () => { $('#setKey').value = S.apiKey; });
+function keyStatusText() {
+  const k = cleanKey(S.apiKey);
+  if (!k) return 'Using the shared DEMO_KEY.';
+  if (!/^[A-Za-z0-9]{40}$/.test(k)) return `That doesn’t look like a full key yet (${k.length} of 40 characters).`;
+  return `Saved: key ending in ${k.slice(-4)}.`;
+}
+/* Reload chargers when the key in use differs from the one the last charger search used, or that search failed */
+function refreshAfterKeyChange() {
+  if (!st.base) return;
+  if (st.stationErr || (st.keyUsed && st.keyUsed !== apiKey())) { const token = ++planToken; analyzeBase(token); }
+}
+$('#checkKey').addEventListener('click', async () => {
+  const stat = $('#keyStat');
+  saveKey();
+  $('#setKey').value = S.apiKey;
+  stat.className = 'keystat';
+  stat.textContent = `Checking ${keyName(apiKey())}…`;
+  try {
+    await nlr('nearest.json', { query: { latitude: '39.7392', longitude: '-104.9903', fuel_type: 'ELEC', limit: '1' } });
+    stat.className = 'keystat ok';
+    stat.textContent = apiKey() === 'DEMO_KEY' ? 'DEMO_KEY works right now, but it runs out fast. Your own key is better.' : `Key works. Chargers will load with ${keyName(apiKey())}.`;
+    refreshAfterKeyChange();
+  } catch (e) {
+    stat.className = 'keystat bad';
+    stat.textContent = nlrError(e) + (e && e.apiMessage ? ` Server said: “${e.apiMessage}”` : '');
+  }
+});
+$('#settingsDlg').addEventListener('close', () => { saveKey(); refreshAfterKeyChange(); });
+$('#settingsDlg').addEventListener('click', e => { if (e.target === $('#settingsDlg')) $('#settingsDlg').close(); });
+const openSettings = (focusKey = false) => {
+  syncSettingsForm();
+  $('#keyStat').className = 'keystat';
+  $('#keyStat').textContent = keyStatusText();
+  $('#settingsDlg').showModal();
+  if (focusKey === true) setTimeout(() => { $('#setKey').scrollIntoView({ block: 'center' }); $('#setKey').focus(); }, 50);
+};
+$('#settingsBtn').addEventListener('click', () => openSettings());
+$('#compactSettings').addEventListener('click', () => openSettings());
+$('#carChip').addEventListener('click', () => openSettings());
 
 /* =====================================================================
    Drive mode: live GPS, next-turn banner, voice, rerouting
