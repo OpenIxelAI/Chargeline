@@ -2,7 +2,9 @@
 
 Trip planner for a Tesla that carries adapters. It plans charging stops with Tesla Superchargers plus the CCS and Level 2 chargers your adapters unlock, then hands the route to Google Maps or guides you itself with GPS and voice.
 
-**Open it:** the GitHub Pages link for this repo (Settings → Pages).
+**Open it:** <https://openixelai.github.io/Chargeline/>
+
+On a phone, open the link in Safari or Chrome and use **Add to Home Screen** so it launches like an app.
 
 ## What it does
 
