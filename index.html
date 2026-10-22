@@ -365,7 +365,10 @@ dialog::backdrop{background:rgba(5,10,15,.45)}
 .keystat.bad{color:var(--warn)}
 .frow input[type=checkbox]{width:20px;height:20px;justify-self:end;accent-color:var(--volt)}
 .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.dlg-f{padding:12px 20px calc(14px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);display:flex;justify-content:flex-end}
+.dlg-f{padding:12px 20px calc(14px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:12px}
+.ver{font-size:12px;color:var(--ink-3)}
+.updatebar{position:fixed;z-index:2100;top:calc(env(safe-area-inset-top,0px) + 10px);left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:12px;padding:8px 8px 8px 16px;border-radius:999px;background:var(--ink);color:var(--panel);box-shadow:var(--shadow-2);font-size:14px;white-space:nowrap}
+.updatebar .btn{height:32px;font-size:13px}
 
 .toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);opacity:0;z-index:2000;background:var(--ink);color:var(--panel);padding:10px 16px;border-radius:12px;font-size:14px;box-shadow:var(--shadow-2);transition:opacity .2s,transform .2s;pointer-events:none;max-width:min(92vw,520px);text-align:center}
 .toast.show{opacity:1;transform:translate(-50%,0)}
@@ -527,11 +530,12 @@ dialog::backdrop{background:rgba(5,10,15,.45)}
         </div>
       </fieldset>
     </div>
-    <div class="dlg-f"><button class="btn primary" value="close" type="submit">Done</button></div>
+    <div class="dlg-f"><span class="ver" id="appVer"></span><button class="btn primary" value="close" type="submit">Done</button></div>
   </form>
 </dialog>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="updatebar" id="updateBar" role="status" hidden><span>A newer version is ready</span><button class="btn small primary" type="button" id="updateBtn">Reload</button></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script>
@@ -542,6 +546,8 @@ if (!window.L) {
 <script>
 (() => {
 'use strict';
+
+const APP_VERSION = '2026.10.22-3';
 
 /* =====================================================================
    Helpers
@@ -2831,8 +2837,26 @@ function initDepart() {
   const pad = n => String(n).padStart(2, '0');
   $('#departAt').value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
+/* GitHub Pages lets browsers reuse a page for ~10 minutes; offer the newer copy when one is out */
+let lastUpdateCheck = 0;
+async function checkForUpdate() {
+  if (!/^https?:$/.test(location.protocol) || Date.now() - lastUpdateCheck < 5 * 60e3) return;
+  lastUpdateCheck = Date.now();
+  try {
+    const r = await fetch(location.pathname + '?check=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return;
+    const m = /const APP_VERSION = '([^']+)'/.exec(await r.text());
+    if (m && m[1] !== APP_VERSION) {
+      $('#updateBar').hidden = false;
+      $('#updateBtn').onclick = () => location.replace(location.pathname + '?v=' + encodeURIComponent(m[1]) + location.hash);
+    }
+  } catch { /* offline or blocked: keep the copy we have */ }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForUpdate(); });
 function init() {
   initIcons(); initDepart(); syncBattery(); syncSettingsForm();
+  $('#appVer').textContent = 'Version ' + APP_VERSION;
+  setTimeout(checkForUpdate, 4000);
   renderCarChip(); renderChips(); updateCompact();
   applyTheme();
   setSheet(isPhone() ? 'half' : 'half');
