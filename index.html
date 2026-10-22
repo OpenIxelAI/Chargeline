@@ -297,6 +297,7 @@ details.dirs[open]>summary svg{transform:rotate(180deg)}
 
 /* leaflet skin */
 .leaflet-container{font:inherit;background:var(--bg)}
+#map.dark-tiles .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.86) saturate(.5)}
 .leaflet-bar a,.leaflet-bar a:hover{background:var(--card);color:var(--ink);border-bottom-color:var(--line)}
 .leaflet-bar{border:1px solid var(--line)!important;box-shadow:var(--shadow-1)!important;border-radius:12px!important;overflow:hidden}
 .leaflet-control-attribution{background:color-mix(in srgb,var(--card) 80%,transparent)!important;color:var(--ink-3)!important;font-size:10px}
@@ -547,7 +548,7 @@ if (!window.L) {
 (() => {
 'use strict';
 
-const APP_VERSION = '2026.10.22-3';
+const APP_VERSION = '2026.10.22-4';
 
 /* =====================================================================
    Helpers
@@ -1610,12 +1611,15 @@ function replan(delay = 300) {
 const map = L.map('map', { zoomControl: false, preferCanvas: true, worldCopyJump: true, zoomSnap: 0.25, zoomDelta: 0.5, wheelPxPerZoomLevel: 90 }).setView([39.6, -98.6], 4);
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 map.attributionControl.setPrefix('');
-const TILE_ATTR = '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>';
+/* Map tiles. OpenStreetMap's standard tiles are free with attribution and no key
+   (CARTO began requiring a key in Aug 2026). Dark mode inverts the same tiles. */
+const OSM_ATTR = '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors · <a href="https://www.openstreetmap.org/fixthemap" target="_blank" rel="noopener">Fix the map</a>';
+const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
 const tiles = {
-  light: L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 20, attribution: TILE_ATTR }),
-  dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 20, attribution: TILE_ATTR }),
-  sat: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Imagery © Esri, Maxar, Earthstar Geographics' }),
-  satLabels: L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 20, pane: 'overlayPane' }),
+  osm: L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: OSM_ATTR }),
+  sat: L.tileLayer(ESRI + 'World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Imagery © Esri, Maxar, Earthstar Geographics' }),
+  satRoads: L.tileLayer(ESRI + 'Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, pane: 'overlayPane' }),
+  satPlaces: L.tileLayer(ESRI + 'Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, pane: 'overlayPane', attribution: 'Labels © Esri' }),
 };
 map.createPane('routes').style.zIndex = 410;
 map.createPane('chargers').style.zIndex = 420;
@@ -1636,8 +1640,9 @@ let currentTiles = [];
 function applyMapStyle() {
   currentTiles.forEach(t => map.removeLayer(t));
   const style = S.mapStyle === 'auto' ? (isDark() ? 'dark' : 'light') : S.mapStyle;
-  currentTiles = style === 'sat' ? [tiles.sat, tiles.satLabels] : [tiles[style] || tiles.light];
+  currentTiles = style === 'sat' ? [tiles.sat, tiles.satRoads, tiles.satPlaces] : [tiles.osm];
   currentTiles.forEach(t => t.addTo(map));
+  $('#map').classList.toggle('dark-tiles', style === 'dark');
   renderLayerMenu();
 }
 function applyTheme() {

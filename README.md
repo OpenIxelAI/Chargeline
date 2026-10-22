@@ -28,7 +28,7 @@ CCS adapter tip: on 2019–2020 builds, check **Controls → Software → Additi
 
 - Chargers: U.S. DOE Alternative Fuels Data Center, via NLR (formerly NREL)
 - Routing: OSRM on OpenStreetMap
-- Map tiles: © OpenStreetMap contributors, © CARTO; satellite imagery © Esri
+- Map tiles: © OpenStreetMap contributors (standard tiles, no key needed); satellite imagery and labels © Esri
 - Elevation and forecast: Open-Meteo
 
 Battery and time figures are estimates from your car profile. Stall availability isn't live, so check the Tesla app before committing to a third-party stop.
