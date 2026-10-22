@@ -1,0 +1,2776 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ChargeLine</title>
+<meta name="description" content="EV trip planner for a Tesla with adapters: Superchargers plus the CCS and Level 2 chargers your adapters unlock, planned charging stops, live GPS guidance and Google Maps hand-off.">
+<meta name="theme-color" content="#F7F9FB" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F151C" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ChargeLine">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%2300926F'/%3E%3Cpath d='M18 5 9 18h6l-2 9 10-14h-6z' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Barlow+Condensed:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+:root{
+  /* Layout: map-first canvas. Wide screens dock the trip panel on the left (Google Maps style);
+     phones get a floating search card on top and a snap-point bottom sheet. Battery % is the visual language. */
+  --bg:#E6ECF1;
+  --panel:#F7F9FB;
+  --card:#FFFFFF;
+  --ink:#0F1923;
+  --ink-2:#465463;
+  --ink-3:#738291;
+  --line:#D8E0E7;
+  --hover:#ECF1F6;
+  --route:#1764E8;
+  --on-route:#FFFFFF;
+  --route-casing:#FFFFFF;
+  --route-alt:#9AA8B6;
+  --nav-bg:#0C3B8A;
+  --volt:#00926F;
+  --native:#C8102E;
+  --adapter:#6447EE;
+  --level2:#2A8C3E;
+  --none:#9AA5B1;
+  --warn:#B4470B;
+  --warn-bg:#FFF1E3;
+  --soc-lo:#E0484D;
+  --soc-mid:#E3A21A;
+  --soc-hi:#12A07D;
+  --shadow-1:0 1px 2px rgba(15,25,35,.10),0 2px 10px rgba(15,25,35,.07);
+  --shadow-2:0 2px 6px rgba(15,25,35,.14),0 16px 40px rgba(15,25,35,.18);
+  --font-display:"Barlow Condensed","Roboto Condensed","Arial Narrow",sans-serif;
+  --font-body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --panel-w:420px;
+  --sheet-h:168px;
+  --top-h:0px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0A0F14;--panel:#0F151C;--card:#161E27;--ink:#E6ECF2;--ink-2:#A6B2BF;--ink-3:#748391;--line:#25313D;--hover:#1C2631;
+    --route:#5B95FF;--on-route:#06142E;--route-casing:#08172E;--route-alt:#5E6B78;--nav-bg:#0B2E6B;
+    --volt:#2ED3A6;--native:#FF4B5C;--adapter:#9C8BFF;--level2:#4FC86A;--none:#5E6B78;--warn:#FF8A4C;--warn-bg:#2A1A10;
+    --soc-lo:#FF5A60;--soc-mid:#F2B532;--soc-hi:#2ED3A6;
+    --shadow-1:0 1px 2px rgba(0,0,0,.45),0 2px 10px rgba(0,0,0,.3);--shadow-2:0 2px 6px rgba(0,0,0,.5),0 16px 40px rgba(0,0,0,.55);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0A0F14;--panel:#0F151C;--card:#161E27;--ink:#E6ECF2;--ink-2:#A6B2BF;--ink-3:#748391;--line:#25313D;--hover:#1C2631;
+  --route:#5B95FF;--on-route:#06142E;--route-casing:#08172E;--route-alt:#5E6B78;--nav-bg:#0B2E6B;
+  --volt:#2ED3A6;--native:#FF4B5C;--adapter:#9C8BFF;--level2:#4FC86A;--none:#5E6B78;--warn:#FF8A4C;--warn-bg:#2A1A10;
+  --soc-lo:#FF5A60;--soc-mid:#F2B532;--soc-hi:#2ED3A6;
+  --shadow-1:0 1px 2px rgba(0,0,0,.45),0 2px 10px rgba(0,0,0,.3);--shadow-2:0 2px 6px rgba(0,0,0,.5),0 16px 40px rgba(0,0,0,.55);
+  color-scheme:dark;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.45 var(--font-body);-webkit-font-smoothing:antialiased;overflow:hidden;-webkit-tap-highlight-color:transparent}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+a{color:var(--route)}
+:focus-visible{outline:2px solid var(--route);outline-offset:2px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.muted{color:var(--ink-3)}
+.num{font-variant-numeric:tabular-nums}
+svg.i{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+svg.i .f{fill:currentColor;stroke:none}
+svg.s{width:16px;height:16px}
+
+/* ---------- layout ---------- */
+.app{height:100%;display:grid;grid-template-columns:var(--panel-w) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+.topcard{grid-column:1;grid-row:1;background:var(--panel);padding:14px 16px 10px;border-right:1px solid var(--line);position:relative;z-index:700}
+.sheet{grid-column:1;grid-row:2;background:var(--panel);border-right:1px solid var(--line);min-height:0;display:flex;flex-direction:column;position:relative;z-index:600}
+.sheet-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:0 16px 40px}
+.handle{display:none}
+.mapwrap{grid-column:2;grid-row:1/3;position:relative;min-width:0;overflow:hidden}
+#map{position:absolute;inset:0;background:var(--bg)}
+
+/* brand row */
+.brand{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.logo{display:flex;align-items:center;gap:8px;margin-right:auto;font:700 24px/1 var(--font-display);letter-spacing:.01em;white-space:nowrap}
+.logo .mark{width:28px;height:28px;border-radius:50%;background:var(--volt);color:var(--panel);display:grid;place-items:center}
+.logo .mark svg{width:17px;height:17px}
+.car-chip{display:inline-flex;align-items:center;gap:6px;min-width:0;max-width:230px;height:34px;padding:0 12px 0 9px;border:1px solid var(--line);background:var(--card);border-radius:999px;font-size:13px;color:var(--ink-2)}
+.car-chip b{color:var(--ink)}
+.car-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.icon-btn{width:38px;height:38px;flex:none;border-radius:50%;border:0;background:transparent;display:grid;place-items:center;color:var(--ink-2)}
+.icon-btn:hover{background:var(--hover);color:var(--ink)}
+.compact-line{display:none}
+
+/* search */
+.search{position:relative;display:grid;grid-template-columns:18px minmax(0,1fr) 38px;gap:8px;align-items:center}
+.rail{grid-column:1;grid-row:1/3;align-self:stretch;display:flex;flex-direction:column;align-items:center;padding:17px 0}
+.r-from{width:12px;height:12px;border-radius:50%;border:2.5px solid var(--ink-2);background:var(--card);flex:none}
+.r-dots{flex:1;border-left:2px dotted var(--ink-3);margin:4px 0}
+.r-to{width:12px;height:12px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:var(--ink);flex:none}
+.field{grid-column:2;display:flex;align-items:center;gap:2px;height:46px;padding:0 4px 0 12px;background:var(--card);border:1px solid var(--line);border-radius:12px;min-width:0}
+.field:focus-within{border-color:var(--route);box-shadow:0 0 0 3px color-mix(in srgb,var(--route) 20%,transparent)}
+.field input{flex:1;min-width:0;height:100%;border:0;outline:0;background:transparent;font-size:16px}
+.field input::placeholder{color:var(--ink-3)}
+.field .icon-btn{width:36px;height:36px}
+.swap{grid-column:3;grid-row:1/3}
+.tripopts{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}
+.pill{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border:1px solid var(--line);background:var(--card);border-radius:999px;font-size:13px;color:var(--ink-2)}
+.pill input,.pill select{border:0;background:transparent;outline:0;font-size:13px;color:var(--ink);min-width:0}
+
+.suggest{position:absolute;left:26px;right:46px;z-index:30;margin:0;padding:6px 0;list-style:none;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-2);max-height:min(60vh,420px);overflow:auto}
+.suggest li{display:grid;grid-template-columns:22px minmax(0,1fr);gap:10px;align-items:center;padding:9px 14px;cursor:pointer}
+.suggest li[aria-selected="true"],.suggest li:hover{background:var(--hover)}
+.suggest .s-t{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.suggest .s-s{font-size:13px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.suggest .s-i{color:var(--ink-3);display:grid;place-items:center}
+.suggest li.s-note{display:block;color:var(--ink-3);cursor:default;font-size:14px}
+.suggest li.s-note:hover{background:none}
+
+/* battery strip */
+.battery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:12px 0 0;padding:12px 14px 10px;background:var(--card);border:1px solid var(--line);border-radius:14px}
+.bat label{display:block;font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);white-space:nowrap}
+.bat output{display:block;font:600 28px/1.05 var(--font-display);font-variant-numeric:tabular-nums}
+.bat input[type=range]{width:100%;margin:4px 0 0;accent-color:var(--volt)}
+
+/* status line */
+.status{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--ink-2)}
+.status:not(:empty){padding:12px 0 2px}
+.spin{width:16px;height:16px;border-radius:50%;border:2.5px solid color-mix(in srgb,var(--route) 25%,transparent);border-top-color:var(--route);animation:spin .8s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+.results.dim{opacity:.45;pointer-events:none;transition:opacity .2s}
+
+/* generic */
+.sec{margin-top:20px}
+.sec-h{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:0 0 8px}
+.sec-h h3{margin:0;font:700 12px/1.2 var(--font-body);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.sec-h .muted{font-size:13px;text-align:right}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 16px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-weight:700;font-size:14px;text-decoration:none;white-space:nowrap}
+.btn:hover{background:var(--hover)}
+.btn.primary{background:var(--route);border-color:var(--route);color:var(--on-route)}
+.btn.primary:hover{filter:brightness(1.06)}
+.btn.small{height:32px;padding:0 12px;font-size:13px}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--route)}
+.btn.danger{background:var(--native);border-color:var(--native);color:#fff}
+.link-btn{border:0;background:none;padding:0;color:var(--route);font-weight:700;font-size:13px}
+
+/* summary */
+.summary{padding-top:14px}
+.sum-main{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.sum-time{font:700 44px/1 var(--font-display);letter-spacing:-.01em}
+.sum-dist{font:600 24px/1 var(--font-display);color:var(--ink-2)}
+.sum-sub{margin-top:6px;color:var(--ink-2);font-size:14px}
+.kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 10px}
+.kpi b{display:block;font:600 24px/1.1 var(--font-display);font-variant-numeric:tabular-nums}
+.kpi span{font-size:12px;color:var(--ink-3)}
+.kpi.ok b{color:var(--volt)}
+.kpi.low b{color:var(--warn)}
+.kpi.bad b{color:var(--native)}
+.routeopts{display:flex;gap:8px;overflow-x:auto;margin-top:14px;padding-bottom:2px}
+.ropt{flex:none;border:1px solid var(--line);background:var(--card);border-radius:12px;padding:7px 12px;text-align:left;font-size:13px;color:var(--ink-2)}
+.ropt b{display:block;font:600 18px/1.1 var(--font-display);color:var(--ink)}
+.ropt[aria-pressed="true"]{border-color:var(--route);box-shadow:inset 0 0 0 1px var(--route)}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.parts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;font-size:13px;color:var(--ink-3);align-items:center}
+.banner{display:flex;gap:10px;align-items:flex-start;margin-top:14px;padding:10px 12px;border-radius:12px;background:var(--warn-bg);color:var(--ink);font-size:14px;border:1px solid color-mix(in srgb,var(--warn) 35%,transparent)}
+.banner svg{color:var(--warn);margin-top:1px}
+.banner.info{background:var(--card);border-color:var(--line)}
+.banner.info svg{color:var(--route)}
+.banner p{margin:0}
+.banner p+p{margin-top:4px}
+
+/* battery ribbon chart */
+.ribbon{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 8px 4px}
+.ribbon svg{display:block;width:100%;height:136px}
+.rb-grid{stroke:var(--line);stroke-width:1}
+.rb-res{stroke:var(--warn);stroke-width:1.2;stroke-dasharray:4 4}
+.rb-lab{fill:var(--ink-3);font:600 11px var(--font-display)}
+.rb-line{fill:none;stroke-width:2.4;stroke-linejoin:round}
+.rb-area{opacity:.22}
+.g-hi{stop-color:var(--soc-hi)}.g-mid{stop-color:var(--soc-mid)}.g-lo{stop-color:var(--soc-lo)}
+.rb-stop{stroke:var(--card);stroke-width:2}
+.rb-num{fill:#fff;font:700 10px var(--font-display)}
+.cond{display:flex;flex-wrap:wrap;gap:6px 14px;margin:6px 6px 4px;font-size:13px;color:var(--ink-2)}
+.cond b{color:var(--ink)}
+
+/* itinerary */
+.itin{list-style:none;margin:0;padding:0;position:relative}
+.itin::before{content:"";position:absolute;left:17px;top:14px;bottom:14px;border-left:3px solid var(--line)}
+.it{display:grid;grid-template-columns:36px minmax(0,1fr);gap:10px;position:relative}
+.it-mark{display:flex;justify-content:center;padding-top:2px}
+.mk{width:20px;height:20px;border-radius:50%;background:var(--card);border:4px solid var(--ink);position:relative;z-index:1}
+.mk.to{border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:var(--ink);border:3px solid var(--card);box-shadow:0 0 0 1px var(--line)}
+.mk.stop{width:32px;height:32px;margin-top:-4px;border:3px solid var(--panel);background:var(--c);color:#fff;display:grid;place-items:center;font:700 16px/1 var(--font-display);text-shadow:0 1px 1px rgba(0,0,0,.3)}
+.it-body{min-width:0;padding-bottom:6px}
+.it-title{font-weight:700;font-size:15px;line-height:1.3;overflow-wrap:anywhere}
+.it-meta{font-size:13px;color:var(--ink-2);margin-top:2px}
+.it-stop .it-body{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:6px}
+.it-net{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--c)}
+.it-row{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.it-charge{font:700 22px/1 var(--font-display);white-space:nowrap}
+.socbar{display:flex;align-items:center;gap:8px;margin:8px 0 2px;font:600 15px/1 var(--font-display);font-variant-numeric:tabular-nums}
+.socbar .bar{flex:1;height:8px;border-radius:4px;background:var(--hover);position:relative;overflow:hidden}
+.socbar .bar i{position:absolute;top:0;bottom:0;border-radius:4px}
+.socbar .bar i.a{background:var(--line)}
+.socbar .bar i.b{background:var(--volt)}
+.it-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.it-leg .it-body{font-size:13px;color:var(--ink-3);padding:2px 0 10px}
+.it-leg .it-body b{color:var(--ink-2);font-weight:700}
+.it-leg.warn .it-body{color:var(--warn)}
+.conns{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.conn{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 8px 0 5px;border-radius:999px;border:1px solid var(--line);font-size:12px;color:var(--ink-2)}
+.conn svg{width:16px;height:16px}
+.conn.ok{border-color:color-mix(in srgb,var(--volt) 45%,var(--line));color:var(--ink)}
+.conn.no{opacity:.55;text-decoration:line-through}
+
+/* chargers list */
+.tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px}
+.tab{flex:none;display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:999px;border:1px solid var(--line);background:var(--card);font-size:13px;color:var(--ink-2)}
+.tab[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--c);flex:none}
+.clist{list-style:none;margin:6px 0 0;padding:0}
+.citem{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.cmile{font:600 17px/1 var(--font-display);text-align:right;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.cmile small{display:block;font-size:11px;color:var(--ink-3);font-weight:500}
+.cname{font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:0;background:none;padding:0;text-align:left;max-width:100%;display:block}
+.cname:hover{text-decoration:underline}
+.cmeta{font-size:12px;color:var(--ink-3);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.cmeta .dot{width:8px;height:8px}
+.cadd{width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--card);display:grid;place-items:center;color:var(--ink-2)}
+.cadd[aria-pressed="true"]{background:var(--volt);border-color:var(--volt);color:var(--panel)}
+
+/* directions */
+details.dirs{border:1px solid var(--line);border-radius:14px;background:var(--card)}
+details.dirs>summary{list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;font-weight:700}
+details.dirs>summary::-webkit-details-marker{display:none}
+details.dirs[open]>summary svg{transform:rotate(180deg)}
+.dlist{list-style:none;margin:0;padding:0 14px 8px}
+.dleg{font:700 12px/1.2 var(--font-body);letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);padding:12px 0 4px}
+.dstep{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:start;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
+.dstep .mi{width:24px;height:24px;color:var(--ink-2)}
+.dstep .dd{font-size:12px;color:var(--ink-3);white-space:nowrap;padding-top:2px}
+.sh{display:inline-grid;place-items:center;vertical-align:-6px;position:relative;margin:0 2px}
+.sh-i{width:24px;height:24px}
+.sh-i svg{position:absolute;inset:0;width:100%;height:100%}
+.sh-i .sh-b{fill:#1C4FA1;stroke:#fff;stroke-width:1}
+.sh-i .sh-t{fill:#C8102E}
+.sh-i b{position:relative;color:#fff;font:700 10.5px/1 var(--font-display);margin-top:3px}
+.sh-i.d3 b{font-size:9px}
+.sh-us{min-width:22px;height:22px;padding:0 3px;background:#fff;color:#111;border:1.5px solid #111;border-radius:4px 4px 10px 10px;font:700 11px/1 var(--font-display)}
+.sh-st{min-width:24px;height:20px;padding:0 4px;background:#fff;color:#111;border:1.5px solid #111;border-radius:50%;font:700 11px/1 var(--font-display)}
+.sh-x{padding:1px 5px;border:1px solid var(--line);border-radius:4px;font-size:12px;vertical-align:0}
+
+/* empty state */
+.empty h2{margin:18px 0 6px;font:700 30px/1.05 var(--font-display)}
+.empty p{margin:0 0 12px;color:var(--ink-2);max-width:60ch}
+.carcard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:grid;gap:10px}
+.carcard select{width:100%;height:40px;border-radius:10px;border:1px solid var(--line);background:var(--panel);padding:0 10px}
+.chk{display:flex;align-items:flex-start;gap:10px;font-size:14px;line-height:1.3}
+.chk input{margin-top:2px;width:18px;height:18px;accent-color:var(--volt);flex:none}
+.chk small{display:block;color:var(--ink-3);font-size:12px}
+.reclist{list-style:none;margin:0;padding:0}
+.reclist li{border-top:1px solid var(--line)}
+.reclist button{display:grid;grid-template-columns:22px minmax(0,1fr);gap:10px;align-items:center;width:100%;padding:10px 2px;border:0;background:none;text-align:left}
+.reclist button:hover{background:var(--hover)}
+.reclist .t{display:block;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.reclist .s{display:block;font-size:13px;color:var(--ink-3)}
+.foot{margin-top:26px;font-size:12px;color:var(--ink-3);line-height:1.5}
+.foot a{color:inherit}
+
+/* map overlays */
+.map-chips{position:absolute;z-index:500;top:12px;left:12px;right:12px;display:flex;gap:8px;overflow-x:auto;pointer-events:none;padding:2px}
+.map-chips>*{pointer-events:auto}
+.mchip{flex:none;display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 13px;border-radius:999px;border:1px solid var(--line);background:var(--card);box-shadow:var(--shadow-1);font-size:13px;font-weight:700;color:var(--ink-2)}
+.mchip[aria-pressed="false"]{color:var(--ink-3);font-weight:400}
+.mchip[aria-pressed="false"] .dot{background:transparent;box-shadow:inset 0 0 0 2px var(--c)}
+.fabs{position:absolute;z-index:500;right:12px;bottom:104px;display:flex;flex-direction:column;gap:10px}
+.fab{width:46px;height:46px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--ink-2);box-shadow:var(--shadow-1);display:grid;place-items:center}
+.fab:hover{color:var(--ink)}
+.layer-menu{position:absolute;right:58px;bottom:0;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-2);padding:6px;display:grid;gap:2px;min-width:150px}
+.layer-menu button{border:0;background:none;text-align:left;padding:8px 10px;border-radius:8px;font-size:14px}
+.layer-menu button[aria-pressed="true"]{background:var(--hover);font-weight:700}
+
+/* leaflet skin */
+.leaflet-container{font:inherit;background:var(--bg)}
+.leaflet-bar a,.leaflet-bar a:hover{background:var(--card);color:var(--ink);border-bottom-color:var(--line)}
+.leaflet-bar{border:1px solid var(--line)!important;box-shadow:var(--shadow-1)!important;border-radius:12px!important;overflow:hidden}
+.leaflet-control-attribution{background:color-mix(in srgb,var(--card) 80%,transparent)!important;color:var(--ink-3)!important;font-size:10px}
+.leaflet-control-attribution a{color:var(--ink-2)!important}
+.leaflet-popup-content-wrapper{background:var(--card);color:var(--ink);border-radius:14px;box-shadow:var(--shadow-2)}
+.leaflet-popup-tip{background:var(--card)}
+.leaflet-popup-content{margin:14px 16px;font:14px/1.45 var(--font-body);min-width:230px}
+.leaflet-container a.leaflet-popup-close-button{color:var(--ink-3);top:6px;right:6px}
+.pop .p-net{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--c);padding-right:18px}
+.pop h4{margin:4px 0 2px;font:700 20px/1.15 var(--font-display)}
+.pop .p-spec{font:600 16px/1.3 var(--font-display);color:var(--ink)}
+.pop .p-addr,.pop .p-meta{font-size:13px;color:var(--ink-2);margin-top:4px}
+.pop .p-meta{color:var(--ink-3)}
+.pop .p-act{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.pop .p-act .btn{height:32px;padding:0 12px;font-size:13px}
+.pin-ic,.stop-ic,.me-ic{background:none;border:0}
+.pt-from{width:20px;height:20px;border-radius:50%;background:var(--card);border:5px solid var(--ink);box-shadow:var(--shadow-1)}
+.pt-to{width:28px;height:28px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:var(--ink);border:3px solid var(--card);box-shadow:var(--shadow-1);display:grid;place-items:center}
+.pt-to::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--card)}
+.stop-pin{width:34px;height:34px;border-radius:50%;background:var(--c);border:3px solid var(--card);box-shadow:var(--shadow-1);display:grid;place-items:center;color:#fff;font:700 17px/1 var(--font-display);text-shadow:0 1px 1px rgba(0,0,0,.35)}
+.stop-tag{position:absolute;top:37px;left:50%;transform:translateX(-50%);white-space:nowrap;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:1px 6px;font:600 13px/1.3 var(--font-display);box-shadow:var(--shadow-1)}
+.zlow .stop-tag{display:none}
+.me-dot{width:18px;height:18px;border-radius:50%;background:var(--route);border:3px solid var(--card);box-shadow:0 0 0 7px color-mix(in srgb,var(--route) 22%,transparent)}
+.nav-arrow{width:52px;height:52px;display:grid;place-items:center;transition:transform .5s linear;border-radius:50%;background:color-mix(in srgb,var(--route) 18%,transparent)}
+.nav-arrow svg{width:40px;height:40px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.35))}
+.nav-arrow .na{fill:var(--route);stroke:var(--card);stroke-width:1.6}
+.drop-pop .p-act{margin-top:0}
+
+/* drive mode */
+.drive{position:absolute;inset:0;z-index:900;pointer-events:none}
+.drive>*{pointer-events:auto}
+.nav-banner{position:absolute;top:calc(env(safe-area-inset-top,0px) + 10px);left:max(10px,env(safe-area-inset-left,0px));right:max(10px,env(safe-area-inset-right,0px));max-width:560px;margin:0 auto;background:var(--nav-bg);color:#fff;border-radius:18px;box-shadow:var(--shadow-2);display:grid;grid-template-columns:64px minmax(0,1fr);gap:12px;align-items:center;padding:12px 16px 12px 12px}
+.nav-icon{width:58px;height:58px;display:grid;place-items:center}
+.nav-icon svg{width:52px;height:52px;color:#fff}
+.nav-dist{font:700 34px/1 var(--font-display);font-variant-numeric:tabular-nums}
+.nav-text{font-size:18px;line-height:1.3;margin-top:2px;overflow-wrap:anywhere}
+.nav-then{position:absolute;top:calc(env(safe-area-inset-top,0px) + 116px);left:max(16px,env(safe-area-inset-left,0px));background:var(--nav-bg);color:#fff;border-radius:12px;padding:6px 12px;font-size:14px;box-shadow:var(--shadow-1);filter:brightness(.85)}
+.nav-bottom{position:absolute;left:max(10px,env(safe-area-inset-left,0px));right:max(10px,env(safe-area-inset-right,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 10px);max-width:560px;margin:0 auto;background:var(--card);color:var(--ink);border-radius:18px;box-shadow:var(--shadow-2);padding:12px 14px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:center}
+.nav-eta b{font:700 30px/1 var(--font-display);font-variant-numeric:tabular-nums;color:var(--volt)}
+.nav-eta span{display:block;font-size:14px;color:var(--ink-2);margin-top:2px}
+.nav-next{grid-column:1/-1;font-size:13px;color:var(--ink-2);border-top:1px solid var(--line);padding-top:8px}
+.nav-next b{color:var(--ink)}
+.nav-btns{display:flex;gap:8px;align-items:center}
+.recenter{position:absolute;right:max(14px,env(safe-area-inset-right,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 150px);width:auto;padding:0 16px;border-radius:999px;font-weight:700;display:flex;gap:8px}
+body.driving .topcard,body.driving .sheet,body.driving .map-chips,body.driving .fabs,body.driving .leaflet-control-zoom{display:none}
+body.driving .app{grid-template-columns:0 minmax(0,1fr)}
+body.driving .leaflet-bottom.leaflet-right{bottom:auto;top:calc(env(safe-area-inset-top,0px) + 112px)}
+
+/* settings dialog */
+dialog{border:0;padding:0;border-radius:18px;background:var(--panel);color:var(--ink);box-shadow:var(--shadow-2);width:min(560px,calc(100vw - 24px));max-height:calc(100dvh - 24px)}
+dialog::backdrop{background:rgba(5,10,15,.45)}
+.dlg{display:flex;flex-direction:column;max-height:calc(100dvh - 24px)}
+.dlg-h{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px 20px;border-bottom:1px solid var(--line)}
+.dlg-h h2{margin:0;font:700 24px/1 var(--font-display)}
+.dlg-b{overflow:auto;padding:4px 20px 20px}
+.dlg-b fieldset{border:0;margin:16px 0 0;padding:0;display:grid;gap:10px}
+.dlg-b legend{font:700 12px/1.2 var(--font-body);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);margin-bottom:8px;padding:0}
+.frow{display:grid;grid-template-columns:minmax(0,1fr) 150px;gap:12px;align-items:center;font-size:14px}
+.frow small{display:block;color:var(--ink-3);font-size:12px}
+.frow input,.frow select{width:100%;height:38px;border:1px solid var(--line);border-radius:10px;background:var(--card);padding:0 10px;font-size:14px}
+.frow.stack{grid-template-columns:1fr;gap:6px}
+.frow input[type=checkbox]{width:20px;height:20px;justify-self:end;accent-color:var(--volt)}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.dlg-f{padding:12px 20px calc(14px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);display:flex;justify-content:flex-end}
+
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);opacity:0;z-index:2000;background:var(--ink);color:var(--panel);padding:10px 16px;border-radius:12px;font-size:14px;box-shadow:var(--shadow-2);transition:opacity .2s,transform .2s;pointer-events:none;max-width:min(92vw,520px);text-align:center}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* ---------- phone layout ---------- */
+@media (max-width: 899px){
+  .app{display:block;position:relative}
+  .mapwrap{position:absolute;inset:0}
+  .topcard{position:absolute;top:0;left:0;right:0;margin:calc(env(safe-area-inset-top,0px) + 8px) max(8px,env(safe-area-inset-right,0px)) 0 max(8px,env(safe-area-inset-left,0px));border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-2);padding:10px 12px}
+  .brand{margin-bottom:8px}
+  .logo{font-size:21px}
+  .car-chip{max-width:170px}
+  .topcard.compact .brand,.topcard.compact .search,.topcard.compact .tripopts{display:none}
+  .topcard.compact{padding:4px 6px 4px 12px}
+  .topcard.compact .compact-line{display:flex;align-items:center;gap:8px}
+  .compact-line button.cl-trip{flex:1;min-width:0;display:flex;align-items:center;gap:8px;border:0;background:none;padding:8px 0;text-align:left;font-weight:700;font-size:15px}
+  .compact-line .cl-trip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sheet{position:absolute;left:0;right:0;bottom:0;height:var(--sheet-h);border:1px solid var(--line);border-bottom:0;border-radius:20px 20px 0 0;box-shadow:var(--shadow-2);transition:height .28s cubic-bezier(.2,.8,.2,1)}
+  .sheet.dragging{transition:none}
+  .handle{display:flex;justify-content:center;align-items:center;height:26px;flex:none;cursor:grab;touch-action:none;border:0;background:none;width:100%}
+  .handle span{width:42px;height:5px;border-radius:3px;background:var(--line)}
+  .sheet-body{padding:0 max(16px,env(safe-area-inset-right,0px)) calc(28px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+  .summary{padding-top:2px}
+  .sum-time{font-size:38px}
+  .map-chips{top:calc(var(--top-h) + 8px);left:8px;right:8px}
+  .fabs{right:10px;bottom:calc(var(--sheet-h) + 12px)}
+  .leaflet-control-zoom{display:none}
+  .leaflet-bottom{bottom:var(--sheet-h)}
+  .suggest{left:0;right:0}
+  .battery{gap:8px;padding:10px 12px 8px}
+  .bat output{font-size:24px}
+}
+@media (max-width: 380px){
+  .kpi b{font-size:20px}
+  .car-chip{max-width:130px}
+}
+@media (prefers-reduced-motion: reduce){
+  *{transition:none!important;animation-duration:.01ms!important}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="topcard" id="topcard">
+    <div class="brand">
+      <div class="logo"><span class="mark"><svg viewBox="0 0 24 24" class="i" aria-hidden="true"><path class="f" d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></span><span>ChargeLine</span></div>
+      <button class="car-chip" id="carChip" type="button" aria-label="Vehicle and adapter settings"></button>
+      <button class="icon-btn" id="settingsBtn" type="button" aria-label="Settings"></button>
+    </div>
+    <div class="compact-line">
+      <button class="cl-trip" id="compactTrip" type="button"></button>
+      <button class="icon-btn" id="compactSettings" type="button" aria-label="Settings"></button>
+    </div>
+    <div class="search" id="search">
+      <div class="rail" aria-hidden="true"><span class="r-from"></span><span class="r-dots"></span><span class="r-to"></span></div>
+      <div class="field">
+        <input id="fromInput" type="text" placeholder="Choose starting point" autocomplete="off" spellcheck="false" enterkeyhint="next" aria-label="Starting point" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="suggest">
+        <button class="icon-btn" id="locateFrom" type="button" aria-label="Use my location as the start"></button>
+      </div>
+      <div class="field">
+        <input id="toInput" type="text" placeholder="Choose destination" autocomplete="off" spellcheck="false" enterkeyhint="go" aria-label="Destination" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="suggest">
+      </div>
+      <button class="icon-btn swap" id="swapBtn" type="button" aria-label="Swap start and destination"></button>
+      <ul class="suggest" id="suggest" role="listbox" hidden></ul>
+    </div>
+    <div class="tripopts">
+      <label class="pill" for="departAt"><span>Leave</span><input id="departAt" type="datetime-local"></label>
+    </div>
+  </header>
+
+  <aside class="sheet" id="sheet" aria-label="Trip">
+    <button class="handle" id="handle" type="button" aria-label="Resize panel"><span></span></button>
+    <div class="sheet-body" id="sheetBody">
+      <div class="battery" id="battery">
+        <div class="bat"><label for="socNow">Battery now</label><output id="socNowOut" for="socNow">80%</output><input id="socNow" type="range" min="1" max="100" step="1"></div>
+        <div class="bat"><label for="maxCharge">Charge to</label><output id="maxChargeOut" for="maxCharge">80%</output><input id="maxCharge" type="range" min="50" max="100" step="5"></div>
+        <div class="bat"><label for="destReserve">Arrive with</label><output id="destReserveOut" for="destReserve">15%</output><input id="destReserve" type="range" min="0" max="60" step="1"></div>
+      </div>
+      <div class="status" id="status" role="status" aria-live="polite"></div>
+      <div class="results" id="results"></div>
+    </div>
+  </aside>
+
+  <main class="mapwrap" id="mapwrap">
+    <div id="map" role="application" aria-label="Map"></div>
+    <div class="map-chips" id="mapChips" aria-label="Charger filters"></div>
+    <div class="fabs">
+      <div style="position:relative">
+        <button class="fab" id="layersBtn" type="button" aria-label="Map style" aria-expanded="false"></button>
+        <div class="layer-menu" id="layerMenu" hidden></div>
+      </div>
+      <button class="fab" id="locateBtn" type="button" aria-label="Show my location"></button>
+    </div>
+    <div class="drive" id="drive" hidden>
+      <div class="nav-banner" id="navBanner">
+        <div class="nav-icon" id="navIcon"></div>
+        <div><div class="nav-dist" id="navDist">—</div><div class="nav-text" id="navText">Getting your location…</div></div>
+      </div>
+      <div class="nav-then" id="navThen" hidden></div>
+      <button class="fab recenter" id="recenterBtn" type="button" hidden></button>
+      <div class="nav-bottom">
+        <div class="nav-eta"><b id="navEta">—</b><span id="navRemain">—</span></div>
+        <div class="nav-btns">
+          <button class="icon-btn" id="voiceBtn" type="button" aria-label="Voice guidance" aria-pressed="true"></button>
+          <button class="btn danger" id="endBtn" type="button">End</button>
+        </div>
+        <div class="nav-next" id="navNext"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<dialog id="settingsDlg" aria-labelledby="setTitle">
+  <form method="dialog" class="dlg" id="settingsForm">
+    <div class="dlg-h"><h2 id="setTitle">Settings</h2><button class="icon-btn" value="close" aria-label="Close settings" id="setClose"></button></div>
+    <div class="dlg-b">
+      <fieldset>
+        <legend>Your car</legend>
+        <div class="frow stack"><label for="setVehicle">Model</label><select id="setVehicle" data-set="vehicle"></select></div>
+        <div id="customCar" class="grid2" hidden>
+          <div class="frow" style="grid-template-columns:1fr"><label for="setKwh">Usable battery (kWh)<input id="setKwh" type="number" min="20" max="200" step="0.5" data-set="custom.kwh"></label></div>
+          <div class="frow" style="grid-template-columns:1fr"><label for="setWhmi">Highway use (Wh/mi)<input id="setWhmi" type="number" min="150" max="700" step="5" data-set="custom.whmi"></label></div>
+          <div class="frow" style="grid-template-columns:1fr"><label for="setPeak">Peak DC charging (kW)<input id="setPeak" type="number" min="40" max="400" step="5" data-set="custom.peak"></label></div>
+          <div class="frow" style="grid-template-columns:1fr"><label for="setChem">Battery type<select id="setChem" data-set="custom.chem"><option value="nmc">NCA / NMC (Long Range)</option><option value="lfp">LFP (RWD)</option></select></label></div>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>Adapters you carry</legend>
+        <label class="chk"><input type="checkbox" id="setCcs" data-set="adapters.ccs"><span><b>CCS1 → NACS</b> (DC fast)<small>Electrify America, EVgo, ChargePoint DC and other CCS stations. Your car must show “CCS Adapter Support: Enabled” under Controls → Software → Additional Vehicle Information.</small></span></label>
+        <label class="chk"><input type="checkbox" id="setJ1772" data-set="adapters.j1772"><span><b>J1772 → NACS</b> (Level 2)<small>Most public Level 2 posts. Ships with most Teslas.</small></span></label>
+        <label class="chk"><input type="checkbox" id="setChademo" data-set="adapters.chademo"><span><b>CHAdeMO</b> (DC, older stations)<small>Rare and slow, about 50 kW.</small></span></label>
+      </fieldset>
+      <fieldset>
+        <legend>Planning</legend>
+        <div class="frow"><label for="setReserve">Arrive at chargers with at least<small>Buffer for wind, detours and busy stalls</small></label><select id="setReserve" data-set="reserve"></select></div>
+        <div class="frow"><label for="setPrefer">Prefer Superchargers<small>Third-party stops must save real time to win</small></label><input type="checkbox" id="setPrefer" data-set="preferTesla"></div>
+        <div class="frow"><label for="setCorridor">Search for chargers within<small>Distance from your route</small></label><select id="setCorridor" data-set="corridor"><option value="1">1 mi of route</option><option value="2">2 mi of route</option><option value="3">3 mi of route</option><option value="5">5 mi of route</option><option value="10">10 mi of route</option></select></div>
+        <div class="frow"><label for="setOverhead">Minutes per stop for parking and plugging in</label><input id="setOverhead" type="number" min="0" max="20" step="1" data-set="overhead"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Conditions</legend>
+        <div class="frow"><label for="setWeather">Temperature<small>Forecast uses Open-Meteo for each part of the route</small></label><select id="setWeather" data-set="weather"><option value="auto">Forecast along route</option><option value="manual">Set it myself</option></select></div>
+        <div class="frow" id="tempRow"><label for="setTemp">Outside temperature (°F)</label><input id="setTemp" type="number" min="-30" max="120" step="1" data-set="manualTempF"></div>
+        <div class="frow"><label for="setSpeed">Highway driving</label><select id="setSpeed" data-set="speed"><option value="relaxed">Relaxed (about 65 mph)</option><option value="normal">Normal (about 70–75 mph)</option><option value="fast">Fast (80 mph and up)</option></select></div>
+      </fieldset>
+      <fieldset>
+        <legend>Map and guidance</legend>
+        <div class="frow"><label for="setTheme">Appearance</label><select id="setTheme" data-set="theme"><option value="auto">Match device</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
+        <div class="frow"><label for="setColor">Color the route by battery level</label><input type="checkbox" id="setColor" data-set="colorRoute"></div>
+        <div class="frow"><label for="setVoice">Spoken turn-by-turn directions</label><input type="checkbox" id="setVoice" data-set="voice"></div>
+        <div class="frow"><label for="setSim">Preview drive with simulated GPS<small>Plays the route back at 12× speed instead of using your location</small></label><input type="checkbox" id="setSim" data-set="simulate"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Charger data</legend>
+        <div class="frow" style="grid-template-columns:1fr"><label for="setKey">NLR / AFDC API key<small>The shared DEMO_KEY allows a few trips per hour. A free personal key takes a minute: <a href="https://developer.nlr.gov/signup/" target="_blank" rel="noopener">developer.nlr.gov/signup</a></small><input id="setKey" type="text" autocomplete="off" spellcheck="false" placeholder="DEMO_KEY" data-set="apiKey" style="margin-top:6px"></label></div>
+      </fieldset>
+    </div>
+    <div class="dlg-f"><button class="btn primary" value="close" type="submit">Done</button></div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+if (!window.L) {
+  document.write('<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>');
+}
+</script>
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   Helpers
+   ===================================================================== */
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const toRad = d => d * Math.PI / 180;
+const R_MI = 3958.7613;
+function hav(la1, lo1, la2, lo2) {
+  const dLa = toRad(la2 - la1), dLo = toRad(lo2 - lo1);
+  const a = Math.sin(dLa / 2) ** 2 + Math.cos(toRad(la1)) * Math.cos(toRad(la2)) * Math.sin(dLo / 2) ** 2;
+  return 2 * R_MI * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+function brg(la1, lo1, la2, lo2) {
+  const y = Math.sin(toRad(lo2 - lo1)) * Math.cos(toRad(la2));
+  const x = Math.cos(toRad(la1)) * Math.sin(toRad(la2)) - Math.sin(toRad(la1)) * Math.cos(toRad(la2)) * Math.cos(toRad(lo2 - lo1));
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const isPhone = () => matchMedia('(max-width: 899px)').matches;
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const nf = new Intl.NumberFormat('en-US');
+
+function fmtMi(mi) {
+  if (!isFinite(mi)) return '—';
+  if (mi < 0.095) return `${Math.max(50, Math.round(mi * 5280 / 50) * 50)} ft`;
+  if (mi < 10) return `${mi.toFixed(1)} mi`;
+  return `${nf.format(Math.round(mi))} mi`;
+}
+function fmtDur(min) {
+  if (!isFinite(min)) return '—';
+  min = Math.max(0, Math.round(min));
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60), m = min % 60;
+  return m ? `${h} h ${m} min` : `${h} h`;
+}
+function fmtClock(d, ref) {
+  const s = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  if (ref && d.toDateString() !== ref.toDateString()) return d.toLocaleDateString('en-US', { weekday: 'short' }) + ' ' + s;
+  return s;
+}
+const fmtKw = kw => `${Math.round(kw)} kW`;
+const pct = s => `${Math.round(s)}%`;
+
+const US = { Alabama: 'AL', Alaska: 'AK', Arizona: 'AZ', Arkansas: 'AR', California: 'CA', Colorado: 'CO', Connecticut: 'CT', Delaware: 'DE', 'District of Columbia': 'DC', Florida: 'FL', Georgia: 'GA', Hawaii: 'HI', Idaho: 'ID', Illinois: 'IL', Indiana: 'IN', Iowa: 'IA', Kansas: 'KS', Kentucky: 'KY', Louisiana: 'LA', Maine: 'ME', Maryland: 'MD', Massachusetts: 'MA', Michigan: 'MI', Minnesota: 'MN', Mississippi: 'MS', Missouri: 'MO', Montana: 'MT', Nebraska: 'NE', Nevada: 'NV', 'New Hampshire': 'NH', 'New Jersey': 'NJ', 'New Mexico': 'NM', 'New York': 'NY', 'North Carolina': 'NC', 'North Dakota': 'ND', Ohio: 'OH', Oklahoma: 'OK', Oregon: 'OR', Pennsylvania: 'PA', 'Rhode Island': 'RI', 'South Carolina': 'SC', 'South Dakota': 'SD', Tennessee: 'TN', Texas: 'TX', Utah: 'UT', Vermont: 'VT', Virginia: 'VA', Washington: 'WA', 'West Virginia': 'WV', Wisconsin: 'WI', Wyoming: 'WY' };
+
+const ICON = {
+  sliders: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+  swap: '<path d="M8 20V4M4.5 7.5 8 4l3.5 3.5M16 4v16M12.5 16.5 16 20l3.5-3.5"/>',
+  locate: '<circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>',
+  layers: '<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>',
+  bolt: '<path class="f" d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+  map: '<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>',
+  share: '<path d="M12 15V3M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>',
+  play: '<path class="f" d="M7 4v16l13-8z"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  pin: '<path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>',
+  me: '<circle class="f" cx="12" cy="12" r="3.5"/><circle cx="12" cy="12" r="8"/>',
+  close: '<path d="M6 6l12 12M18 6 6 18"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  check: '<path d="m5 12 4.5 4.5L19 7"/>',
+  vol: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>',
+  mute: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="m16 9 5 6M21 9l-5 6"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+  car: '<path d="M4 16v-3.5L6.5 7h11l2.5 5.5V16z"/><circle cx="8" cy="16.5" r="1.8"/><circle cx="16" cy="16.5" r="1.8"/>',
+  warn: '<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.5"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
+  nav: '<path class="f" d="M12 3 19 20 12 16.5 5 20z"/>',
+  chev: '<path d="m6 9 6 6 6-6"/>',
+  route: '<circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8.5 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.5"/>',
+};
+const ic = (name, extra = '') => `<svg class="i ${extra}" viewBox="0 0 24 24" aria-hidden="true">${ICON[name]}</svg>`;
+
+/* Connector faces (SAE J1772, CCS1, J3400/NACS, CHAdeMO), simplified */
+const CONN_SVG = {
+  TESLA: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.2 4h11.6a3 3 0 0 1 3 3.3c-.5 5.4-4 10.6-8.8 12.4-4.8-1.8-8.3-7-8.8-12.4A3 3 0 0 1 6.2 4z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8.8" cy="9" r="2" fill="currentColor"/><circle cx="15.2" cy="9" r="2" fill="currentColor"/><circle cx="9.7" cy="13.8" r=".9" fill="currentColor"/><circle cx="12" cy="15" r=".9" fill="currentColor"/><circle cx="14.3" cy="13.8" r=".9" fill="currentColor"/></svg>',
+  J1772: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8.6" cy="9.4" r="1.7" fill="currentColor"/><circle cx="15.4" cy="9.4" r="1.7" fill="currentColor"/><circle cx="12" cy="15.6" r="1.7" fill="currentColor"/><circle cx="8" cy="14.2" r=".8" fill="currentColor"/><circle cx="16" cy="14.2" r=".8" fill="currentColor"/></svg>',
+  J1772COMBO: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.3" r="6.3" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="9.6" cy="7" r="1.2" fill="currentColor"/><circle cx="14.4" cy="7" r="1.2" fill="currentColor"/><circle cx="12" cy="10.8" r="1.2" fill="currentColor"/><rect x="5.5" y="15.8" width="13" height="6.2" rx="3.1" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="18.9" r="1.5" fill="currentColor"/><circle cx="15" cy="18.9" r="1.5" fill="currentColor"/></svg>',
+  CHADEMO: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.4" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="12" r="2.3" fill="currentColor"/><circle cx="16" cy="12" r="2.3" fill="currentColor"/><circle cx="12" cy="7" r="1" fill="currentColor"/><circle cx="12" cy="17" r="1" fill="currentColor"/></svg>',
+};
+const CONN_NAME = { TESLA: 'NACS', J1772COMBO: 'CCS1', CHADEMO: 'CHAdeMO', J1772: 'J1772' };
+
+/* =====================================================================
+   Vehicle, energy and charging model
+   ===================================================================== */
+const VEHICLES = {
+  my_lr:  { name: 'Model Y Long Range AWD', short: 'Model Y LR', years: '2020–2024', kwh: 75, whmi: 285, peak: 250, kg: 2000, chem: 'nmc' },
+  my_p:   { name: 'Model Y Performance', short: 'Model Y P', years: '2020–2024', kwh: 75, whmi: 305, peak: 250, kg: 2010, chem: 'nmc' },
+  my_rwd: { name: 'Model Y RWD', short: 'Model Y RWD', years: '2023+', kwh: 60, whmi: 270, peak: 170, kg: 1910, chem: 'lfp' },
+  my_25:  { name: 'Model Y Long Range (2025+ refresh)', short: 'Model Y LR', years: '2025+', kwh: 78, whmi: 270, peak: 250, kg: 1990, chem: 'nmc' },
+  m3_lr:  { name: 'Model 3 Long Range AWD', short: 'Model 3 LR', years: '2019–2023', kwh: 75, whmi: 255, peak: 250, kg: 1850, chem: 'nmc' },
+  m3_p:   { name: 'Model 3 Performance', short: 'Model 3 P', years: '2019–2023', kwh: 75, whmi: 275, peak: 250, kg: 1850, chem: 'nmc' },
+  m3_rwd: { name: 'Model 3 RWD / Standard Range Plus', short: 'Model 3 RWD', years: '2019–2023', kwh: 57.5, whmi: 240, peak: 170, kg: 1760, chem: 'lfp' },
+  m3_24:  { name: 'Model 3 Long Range (2024+ refresh)', short: 'Model 3 LR', years: '2024+', kwh: 77, whmi: 240, peak: 250, kg: 1830, chem: 'nmc' },
+  ms:     { name: 'Model S Long Range', short: 'Model S', years: '2021+', kwh: 95, whmi: 300, peak: 250, kg: 2070, chem: 'nmc' },
+  mx:     { name: 'Model X Long Range', short: 'Model X', years: '2021+', kwh: 95, whmi: 360, peak: 250, kg: 2350, chem: 'nmc' },
+  ct:     { name: 'Cybertruck AWD', short: 'Cybertruck', years: '2024+', kwh: 123, whmi: 470, peak: 325, kg: 3100, chem: 'nmc' },
+};
+/* Normalized DC charge curves (fraction of the car's peak kW vs state of charge) */
+const CURVES = {
+  nmc: [[0, .80], [.05, .95], [.10, 1], [.20, 1], [.30, .78], [.40, .62], [.50, .50], [.60, .39], [.70, .29], [.80, .20], [.90, .12], [1, .05]],
+  lfp: [[0, .85], [.10, 1], [.30, 1], [.45, .78], [.60, .58], [.70, .45], [.80, .33], [.90, .20], [1, .07]],
+};
+const SPEED = { relaxed: 0.93, normal: 1, fast: 1.12 };
+function curveAt(curve, s) {
+  for (let i = 1; i < curve.length; i++) {
+    if (s <= curve[i][0]) { const [x0, y0] = curve[i - 1], [x1, y1] = curve[i]; return y0 + (y1 - y0) * (s - x0) / (x1 - x0); }
+  }
+  return curve[curve.length - 1][1];
+}
+/* Extra energy for cabin/battery heat in the cold and A/C in the heat */
+function tempFactor(F) {
+  if (!isFinite(F)) return 1.03;
+  if (F < 65) return Math.min(1.45, 1 + (65 - F) * 0.0062);
+  if (F > 85) return 1 + Math.min(0.12, (F - 85) * 0.004);
+  return 1;
+}
+
+/* =====================================================================
+   Settings (kept in this browser only)
+   ===================================================================== */
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('chargeline:' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('chargeline:' + k, JSON.stringify(v)); } catch { /* storage unavailable */ } },
+};
+const DEFAULTS = {
+  vehicle: 'my_lr',
+  custom: { kwh: 75, whmi: 285, peak: 250, chem: 'nmc', kg: 2000 },
+  adapters: { ccs: true, j1772: true, chademo: false },
+  socNow: 80, maxCharge: 80, destReserve: 15, reserve: 10,
+  preferTesla: true, corridor: 3, overhead: 4,
+  weather: 'auto', manualTempF: 60, speed: 'normal',
+  theme: 'auto', mapStyle: 'auto', colorRoute: true, voice: true, simulate: false,
+  apiKey: '',
+  filters: { native: true, adapter: true, l2: false, none: false },
+};
+function loadSettings() {
+  const saved = store.get('settings', {});
+  const out = JSON.parse(JSON.stringify(DEFAULTS));
+  for (const k of Object.keys(saved || {})) {
+    if (out[k] && typeof out[k] === 'object' && !Array.isArray(out[k]) && saved[k] && typeof saved[k] === 'object') Object.assign(out[k], saved[k]);
+    else if (k in out) out[k] = saved[k];
+  }
+  if (out.vehicle !== 'custom' && !VEHICLES[out.vehicle]) out.vehicle = 'my_lr';
+  return out;
+}
+let S = loadSettings();
+const saveSettings = () => store.set('settings', S);
+function car() {
+  if (S.vehicle === 'custom') {
+    const c = S.custom;
+    return { name: 'Custom vehicle', short: 'Custom', years: '', kwh: +c.kwh || 75, whmi: +c.whmi || 285, peak: +c.peak || 250, kg: +c.kg || 2000, chem: c.chem === 'lfp' ? 'lfp' : 'nmc' };
+  }
+  return VEHICLES[S.vehicle] || VEHICLES.my_lr;
+}
+function adapterText() {
+  const a = [];
+  if (S.adapters.ccs) a.push('CCS1');
+  if (S.adapters.j1772) a.push('J1772');
+  if (S.adapters.chademo) a.push('CHAdeMO');
+  return a.length ? a.join(' + ') : 'no adapters';
+}
+
+/* =====================================================================
+   App state
+   ===================================================================== */
+const st = {
+  from: null, to: null,          // {lat,lng,title,sub,isMe}
+  routes: [], routeIdx: 0,       // base route alternatives
+  base: null, baseProf: null,    // selected base route + energy profile
+  stations: [], stationErr: null, corridorUsed: 0,
+  l2: null, l2Loading: false,
+  wx: null,                      // weather samples for base route
+  custom: null,                  // user-chosen stop ids, or null for auto plan
+  final: null, finalProf: null, sim: null, meta: null,
+  listTab: 'usable', listAll: false,
+};
+let planToken = 0;
+const routeCache = new Map();
+const stationCache = new Map();
+const elevCache = new Map();
+/* drive-mode state */
+const D = { on: false, watch: null, sim: null, idx: 0, x: 0, pos: null, k: 0, offN: 0, lastReroute: 0, follow: true, spoken: new Set(), steps: [], marker: null, wake: null, arrivedLegs: new Set() };
+
+/* =====================================================================
+   Network
+   ===================================================================== */
+async function fetchJSON(url, opts = {}, timeoutMs = 25000) {
+  const ctrl = new AbortController();
+  const outer = opts.signal;
+  if (outer) { if (outer.aborted) ctrl.abort(); else outer.addEventListener('abort', () => ctrl.abort(), { once: true }); }
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, { ...opts, signal: ctrl.signal });
+    if (!r.ok) {
+      const err = new Error(`HTTP ${r.status}`);
+      err.status = r.status;
+      try { err.body = await r.text(); } catch { /* ignore */ }
+      throw err;
+    }
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
+
+/* Geocoding: Photon (OpenStreetMap), Nominatim as a fallback */
+function placeFromPhoton(f) {
+  const p = f.properties || {}, c = f.geometry && f.geometry.coordinates;
+  if (!c) return null;
+  const stc = US[p.state] || p.state || '';
+  const locality = p.city || p.town || p.village || p.locality || p.district || '';
+  const country = p.countrycode && p.countrycode.toUpperCase() !== 'US' ? p.country : '';
+  const isPlace = p.osm_key === 'place' || ['city', 'town', 'village', 'hamlet', 'locality', 'county', 'state', 'district'].includes(p.type);
+  const street = p.street ? ((p.housenumber ? p.housenumber + ' ' : '') + p.street) : '';
+  let title, sub;
+  if (p.name && !isPlace) { title = p.name; sub = [street, locality, stc, country]; }
+  else if (p.name) { title = p.name; sub = [['city', 'town', 'village'].includes(p.type) ? '' : locality, stc, country]; }
+  else if (street) { title = street; sub = [locality, stc, country]; }
+  else { title = locality || stc || 'Selected place'; sub = [stc, country]; }
+  sub = [...new Set(sub.filter(Boolean))].filter(x => x !== title).join(', ');
+  return { lat: c[1], lng: c[0], title, sub };
+}
+async function geocode(q, signal, allowFallback = false) {
+  const c = map.getCenter();
+  const p = new URLSearchParams({ q, limit: '6', lang: 'en', lat: c.lat.toFixed(3), lon: c.lng.toFixed(3) });
+  try {
+    const j = await fetchJSON('https://photon.komoot.io/api/?' + p, { signal }, 12000);
+    return (j.features || []).map(placeFromPhoton).filter(Boolean);
+  } catch (e) {
+    if ((signal && signal.aborted) || !allowFallback) throw e;
+    const n = new URLSearchParams({ format: 'jsonv2', q, limit: '5', addressdetails: '1' });
+    const j = await fetchJSON('https://nominatim.openstreetmap.org/search?' + n, { signal }, 12000);
+    return (j || []).map(r => {
+      const parts = String(r.display_name || '').split(',').map(s => s.trim());
+      return { lat: +r.lat, lng: +r.lon, title: r.name || parts[0] || q, sub: parts.slice(1, 4).join(', ') };
+    });
+  }
+}
+async function reverseGeocode(lat, lng) {
+  try {
+    const j = await fetchJSON(`https://photon.komoot.io/reverse?lat=${lat.toFixed(6)}&lon=${lng.toFixed(6)}&lang=en`, {}, 10000);
+    const f = (j.features || [])[0];
+    return f ? placeFromPhoton(f) : null;
+  } catch { return null; }
+}
+
+/* Routing: OSRM (OpenStreetMap data) with a second public server as fallback */
+const OSRM = ['https://router.project-osrm.org/route/v1/driving/', 'https://routing.openstreetmap.de/routed-car/route/v1/driving/'];
+async function osrmRoute(points, alternatives = false) {
+  const coords = points.map(p => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(';');
+  const q = `?overview=full&geometries=geojson&steps=true${alternatives && points.length === 2 ? '&alternatives=true' : ''}`;
+  let last;
+  for (const h of OSRM) {
+    try {
+      const j = await fetchJSON(h + coords + q, {}, 35000);
+      if (j.code !== 'Ok' || !j.routes || !j.routes.length) throw new Error(j.message || j.code || 'No route');
+      return j.routes.map(normRoute);
+    } catch (e) { last = e; }
+  }
+  throw last;
+}
+
+/* Chargers: DOE Alternative Fuels Data Center via NLR (formerly NREL) */
+const NLR = ['https://developer.nlr.gov', 'https://developer.nrel.gov'];
+const apiKey = () => (S.apiKey || '').trim() || 'DEMO_KEY';
+async function nlr(path, { query = {}, body = null } = {}) {
+  const qs = new URLSearchParams({ api_key: apiKey(), ...query });
+  let last;
+  for (const h of NLR) {
+    try {
+      const opts = body ? { method: 'POST', body: new URLSearchParams(body) } : {};
+      return await fetchJSON(`${h}/api/alt-fuel-stations/v1/${path}?${qs}`, opts, 60000);
+    } catch (e) {
+      last = e;
+      if (e.status && e.status < 500) break; // the server answered; don't hide the real error
+    }
+  }
+  throw last;
+}
+function nlrError(e) {
+  if (e && e.status === 429) return 'The shared charger-data key hit its hourly limit. Add your free NLR API key in Settings to keep going.';
+  if (e && (e.status === 401 || e.status === 403)) return 'The charger-data service rejected the API key. Check it in Settings, or clear it to use DEMO_KEY.';
+  return 'Couldn’t reach the charger database (NLR Alternative Fuels Data Center). Check your connection and try again.';
+}
+
+/* Elevation and temperature: Open-Meteo */
+async function fetchElevations(pts) {
+  const out = new Array(pts.length).fill(null);
+  const need = [];
+  pts.forEach((p, i) => {
+    const k = p[0].toFixed(3) + ',' + p[1].toFixed(3);
+    if (elevCache.has(k)) out[i] = elevCache.get(k); else need.push(i);
+  });
+  const chunks = [];
+  for (let i = 0; i < need.length; i += 100) chunks.push(need.slice(i, i + 100));
+  for (let g = 0; g < chunks.length; g += 4) {
+    await Promise.all(chunks.slice(g, g + 4).map(async idx => {
+      const la = idx.map(i => pts[i][0].toFixed(4)).join(','), lo = idx.map(i => pts[i][1].toFixed(4)).join(',');
+      const j = await fetchJSON(`https://api.open-meteo.com/v1/elevation?latitude=${la}&longitude=${lo}`, {}, 20000);
+      (j.elevation || []).forEach((e, k) => {
+        if (typeof e === 'number' && isFinite(e)) {
+          out[idx[k]] = e;
+          elevCache.set(pts[idx[k]][0].toFixed(3) + ',' + pts[idx[k]][1].toFixed(3), e);
+        }
+      });
+    }));
+  }
+  return out;
+}
+async function fetchWeather(prof, departMs) {
+  const now = Date.now(), horizon = now + 15 * 864e5;
+  if (departMs > horizon) return null;
+  const m = Math.min(12, Math.max(2, Math.ceil(prof.D / 120) + 1));
+  const pts = [];
+  for (let k = 0; k < m; k++) {
+    const x = prof.D * k / (m - 1), i = Math.min(prof.n - 1, Math.round(x / prof.step));
+    pts.push({ lat: prof.lat[i], lng: prof.lng[i], x });
+  }
+  const sd = new Date(Math.max(now, departMs) - 3600e3).toISOString().slice(0, 10);
+  const ed = new Date(Math.min(horizon, departMs + prof.sec[prof.n - 1] * 1500 + 864e5)).toISOString().slice(0, 10);
+  const u = `https://api.open-meteo.com/v1/forecast?latitude=${pts.map(p => p.lat.toFixed(3)).join(',')}&longitude=${pts.map(p => p.lng.toFixed(3)).join(',')}&hourly=temperature_2m&temperature_unit=fahrenheit&timezone=GMT&start_date=${sd}&end_date=${ed}`;
+  const j = await fetchJSON(u, {}, 20000);
+  const arr = Array.isArray(j) ? j : [j];
+  return pts.map((p, k) => {
+    const h = arr[k] && arr[k].hourly;
+    return { ...p, times: h ? h.time.map(s => Date.parse(s + 'Z')) : [], temps: h ? h.temperature_2m : [] };
+  });
+}
+
+/* =====================================================================
+   Route geometry
+   ===================================================================== */
+function normRoute(r) {
+  const coords = [], cumMi = [], cumSec = [], legs = [];
+  let d = 0, t = 0;
+  const push = (lat, lng, spm) => {
+    if (coords.length) {
+      const p = coords[coords.length - 1];
+      const seg = hav(p[0], p[1], lat, lng);
+      if (seg < 1e-7) return;
+      d += seg; t += seg * spm;
+    }
+    coords.push([lat, lng]); cumMi.push(d); cumSec.push(t);
+  };
+  for (const leg of r.legs || []) {
+    const L = { distanceMi: leg.distance / 1609.344, summary: leg.summary || '', steps: [], startMi: d, startSec: t };
+    for (const s of leg.steps || []) {
+      const g = (s.geometry && s.geometry.coordinates) || [];
+      let glen = 0;
+      for (let i = 1; i < g.length; i++) glen += hav(g[i - 1][1], g[i - 1][0], g[i][1], g[i][0]);
+      const spm = glen > 0 ? s.duration / glen : 0;
+      const m = s.maneuver || {};
+      L.steps.push({
+        type: m.type || 'continue', modifier: m.modifier || '', exit: m.exit, bearingAfter: m.bearing_after || 0,
+        name: s.name || '', ref: s.ref || '', destinations: s.destinations || '', exits: s.exits || '', rotary: s.rotary_name || '',
+        atMi: d, atSec: t, distMi: s.distance / 1609.344, durSec: s.duration, leg: legs.length,
+      });
+      for (let i = 0; i < g.length; i++) push(g[i][1], g[i][0], spm);
+      if (glen === 0 && s.duration > 0) t += s.duration;
+    }
+    L.endMi = d; L.endSec = t; L.durationSec = L.endSec - L.startSec;
+    legs.push(L);
+  }
+  if (coords.length < 2 && r.geometry && r.geometry.coordinates) {
+    coords.length = cumMi.length = cumSec.length = 0; d = 0; t = 0;
+    const g = r.geometry.coordinates, total = r.distance / 1609.344 || 1, spm = r.duration / total;
+    for (const c of g) push(c[1], c[0], spm);
+    legs.length = 0;
+    legs.push({ distanceMi: d, summary: '', steps: [], startMi: 0, startSec: 0, endMi: d, endSec: t, durationSec: t });
+  }
+  return {
+    coords, cumMi: Float64Array.from(cumMi), cumSec: Float64Array.from(cumSec), legs,
+    distanceMi: d, durationSec: t, summary: [...new Set(legs.map(l => l.summary).join(', ').split(',').map(s => s.trim()).filter(Boolean))].slice(0, 3).join(', '),
+  };
+}
+function routeIndexAt(r, x) {
+  const cm = r.cumMi;
+  let lo = 0, hi = cm.length - 1;
+  if (x <= 0) return 0;
+  if (x >= cm[hi]) return Math.max(0, hi - 1);
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (cm[mid] <= x) lo = mid; else hi = mid; }
+  return lo;
+}
+function pointAtX(r, x) {
+  const n = r.coords.length;
+  if (n === 1) return { lat: r.coords[0][0], lng: r.coords[0][1], sec: 0 };
+  const i = routeIndexAt(r, x), j = Math.min(n - 1, i + 1);
+  const a = r.cumMi[i], b = r.cumMi[j], t = b > a ? clamp((x - a) / (b - a), 0, 1) : 0;
+  return {
+    lat: r.coords[i][0] + (r.coords[j][0] - r.coords[i][0]) * t,
+    lng: r.coords[i][1] + (r.coords[j][1] - r.coords[i][1]) * t,
+    sec: r.cumSec[i] + (r.cumSec[j] - r.cumSec[i]) * t,
+  };
+}
+function xAtSec(r, sec) {
+  const cs = r.cumSec;
+  let lo = 0, hi = cs.length - 1;
+  if (sec <= 0) return 0;
+  if (sec >= cs[hi]) return r.distanceMi;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (cs[mid] <= sec) lo = mid; else hi = mid; }
+  const t = cs[hi] > cs[lo] ? (sec - cs[lo]) / (cs[hi] - cs[lo]) : 0;
+  return r.cumMi[lo] + (r.cumMi[hi] - r.cumMi[lo]) * t;
+}
+/* Split a route at mile markers (used when the re-route through stops fails) */
+function splitRoute(r, xs) {
+  const cuts = [0, ...xs, r.distanceMi];
+  const legs = [];
+  for (let i = 0; i < cuts.length - 1; i++) {
+    const a = cuts[i], b = cuts[i + 1];
+    const sa = pointAtX(r, a).sec, sb = pointAtX(r, b).sec;
+    const steps = r.legs.flatMap(l => l.steps).filter(s => s.atMi >= a && s.atMi < b).map(s => ({ ...s, leg: i }));
+    legs.push({ distanceMi: b - a, summary: '', steps, startMi: a, endMi: b, startSec: sa, endSec: sb, durationSec: sb - sa });
+  }
+  return { ...r, legs, approx: true };
+}
+function simplify(coords, tol) {
+  const n = coords.length;
+  if (n <= 2) return coords.slice();
+  const keep = new Uint8Array(n); keep[0] = keep[n - 1] = 1;
+  const kx = Math.cos(toRad(coords[Math.floor(n / 2)][0]));
+  const stack = [[0, n - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop();
+    const ax = coords[a][1] * kx, ay = coords[a][0], bx = coords[b][1] * kx, by = coords[b][0];
+    const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+    let maxD = 0, idx = -1;
+    for (let i = a + 1; i < b; i++) {
+      const px = coords[i][1] * kx, py = coords[i][0];
+      let t = L2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / L2 : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const ex = ax + t * dx - px, ey = ay + t * dy - py, dd = ex * ex + ey * ey;
+      if (dd > maxD) { maxD = dd; idx = i; }
+    }
+    if (idx > 0 && maxD > tol * tol) { keep[idx] = 1; stack.push([a, idx], [idx, b]); }
+  }
+  const out = [];
+  for (let i = 0; i < n; i++) if (keep[i]) out.push(coords[i]);
+  return out;
+}
+function simplifyTo(coords, maxPts) {
+  let tol = 0.0015, s = simplify(coords, tol);
+  while (s.length > maxPts && tol < 0.5) { tol *= 1.6; s = simplify(coords, tol); }
+  return s;
+}
+
+/* =====================================================================
+   Energy profile along a route (evenly spaced samples)
+   ===================================================================== */
+function makeProfile(r) {
+  const D = Math.max(0.01, r.distanceMi);
+  const step = D > 600 ? 2 : D > 150 ? 1 : D > 40 ? 0.5 : 0.25;
+  const n = Math.max(2, Math.ceil(D / step) + 1);
+  const xs = new Float64Array(n), lat = new Float64Array(n), lng = new Float64Array(n), sec = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = Math.min(D, i * step);
+    const p = pointAtX(r, x);
+    xs[i] = x; lat[i] = p.lat; lng[i] = p.lng; sec[i] = p.sec;
+  }
+  const prof = { D, step, n, xs, lat, lng, sec, elev: null, temp: null, E: null, tbl: null };
+  buildGrid(prof);
+  return prof;
+}
+function buildGrid(prof) {
+  const cell = 0.2, g = new Map();
+  for (let i = 1; i < prof.n; i++) {
+    const la0 = Math.floor(Math.min(prof.lat[i - 1], prof.lat[i]) / cell), la1 = Math.floor(Math.max(prof.lat[i - 1], prof.lat[i]) / cell);
+    const lo0 = Math.floor(Math.min(prof.lng[i - 1], prof.lng[i]) / cell), lo1 = Math.floor(Math.max(prof.lng[i - 1], prof.lng[i]) / cell);
+    for (let a = la0; a <= la1; a++) for (let b = lo0; b <= lo1; b++) {
+      const k = a + ':' + b;
+      let arr = g.get(k);
+      if (!arr) g.set(k, arr = []);
+      arr.push(i);
+    }
+  }
+  prof.grid = g; prof.cell = cell;
+}
+/* Mile marker along the profile and distance off the route for any point */
+function project(prof, lat, lng) {
+  const cell = prof.cell, a0 = Math.floor(lat / cell), b0 = Math.floor(lng / cell), kx = Math.cos(toRad(lat));
+  let best = Infinity, bi = 1, bt = 0;
+  const seen = new Set();
+  const test = i => {
+    if (seen.has(i)) return;
+    seen.add(i);
+    const ax = prof.lng[i - 1] * kx, ay = prof.lat[i - 1], bx = prof.lng[i] * kx, by = prof.lat[i];
+    const px = lng * kx, py = lat, dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+    let t = L2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / L2 : 0;
+    t = clamp(t, 0, 1);
+    const ex = ax + t * dx - px, ey = ay + t * dy - py, dd = ex * ex + ey * ey;
+    if (dd < best) { best = dd; bi = i; bt = t; }
+  };
+  for (let r = 1; r <= 3 && best === Infinity; r++) {
+    for (let a = a0 - r; a <= a0 + r; a++) for (let b = b0 - r; b <= b0 + r; b++) {
+      const arr = prof.grid.get(a + ':' + b);
+      if (arr) arr.forEach(test);
+    }
+  }
+  if (best === Infinity) for (let i = 1; i < prof.n; i++) test(i);
+  return { x: prof.xs[bi - 1] + (prof.xs[bi] - prof.xs[bi - 1]) * bt, off: Math.sqrt(best) * 69.05 };
+}
+function sampleIdx(prof, x) { return clamp(Math.floor(x / prof.step), 0, prof.n - 1); }
+function interp(prof, arr, x) {
+  if (!arr) return NaN;
+  const i = Math.min(prof.n - 2, Math.max(0, Math.floor(x / prof.step)));
+  const span = prof.xs[i + 1] - prof.xs[i];
+  const t = span > 0 ? clamp((x - prof.xs[i]) / span, 0, 1) : 0;
+  return arr[i] + (arr[i + 1] - arr[i]) * t;
+}
+async function addElevation(prof) {
+  const k = Math.max(1, Math.ceil(prof.n / 480));
+  const idx = [];
+  for (let i = 0; i < prof.n; i += k) idx.push(i);
+  if (idx[idx.length - 1] !== prof.n - 1) idx.push(prof.n - 1);
+  const vals = await fetchElevations(idx.map(i => [prof.lat[i], prof.lng[i]]));
+  if (vals.filter(v => v != null).length < idx.length * 0.8) throw new Error('Incomplete elevation data');
+  for (let q = 0; q < vals.length; q++) if (vals[q] == null) vals[q] = vals[q - 1] ?? vals.find(v => v != null);
+  const elev = new Float64Array(prof.n);
+  for (let q = 0; q < idx.length - 1; q++) {
+    const i0 = idx[q], i1 = idx[q + 1];
+    for (let i = i0; i <= i1; i++) elev[i] = vals[q] + (vals[q + 1] - vals[q]) * ((i - i0) / ((i1 - i0) || 1));
+  }
+  prof.elev = elev;
+}
+function borrowElevation(prof, from) {
+  if (!from || !from.elev) return;
+  const elev = new Float64Array(prof.n);
+  for (let i = 0; i < prof.n; i++) elev[i] = interp(from, from.elev, project(from, prof.lat[i], prof.lng[i]).x);
+  prof.elev = elev;
+}
+function applyWeather(prof, wx, departMs) {
+  if (!wx || !wx.length) { prof.temp = null; return; }
+  const temp = new Float64Array(prof.n);
+  for (let i = 0; i < prof.n; i++) {
+    let bk = 0, bd = Infinity;
+    for (let k = 0; k < wx.length; k++) {
+      const d = Math.abs(wx[k].lat - prof.lat[i]) + Math.abs(wx[k].lng - prof.lng[i]) * 0.75;
+      if (d < bd) { bd = d; bk = k; }
+    }
+    const w = wx[bk];
+    let v = NaN;
+    if (w.times.length) {
+      const when = departMs + prof.sec[i] * 1000;
+      const h = clamp(Math.round((when - w.times[0]) / 3600e3), 0, w.times.length - 1);
+      v = w.temps[h];
+    }
+    temp[i] = isFinite(v) ? v : NaN;
+  }
+  prof.temp = temp;
+}
+function tempAt(prof, i) {
+  if (S.weather === 'manual') return +S.manualTempF;
+  if (prof.temp && isFinite(prof.temp[i])) return prof.temp[i];
+  return NaN;
+}
+function computeEnergy(prof) {
+  const c = car(), base = c.whmi * (SPEED[S.speed] || 1), m = c.kg + 120, g = 9.81;
+  const E = new Float64Array(prof.n);
+  let climb = 0, descent = 0, tSum = 0, tW = 0, tMin = Infinity;
+  for (let i = 1; i < prof.n; i++) {
+    const d = prof.xs[i] - prof.xs[i - 1];
+    const T = tempAt(prof, i);
+    let e = d * base * tempFactor(T) / 1000;
+    if (isFinite(T)) { tSum += T * d; tW += d; tMin = Math.min(tMin, T); }
+    if (prof.elev) {
+      const dh = prof.elev[i] - prof.elev[i - 1];
+      if (isFinite(dh)) {
+        e += dh > 0 ? m * g * dh / 0.88 / 3.6e6 : m * g * dh * 0.65 / 3.6e6;
+        if (dh > 0) climb += dh; else descent -= dh;
+      }
+    }
+    E[i] = E[i - 1] + e;
+  }
+  prof.E = E;
+  prof.tbl = sparseMax(E);
+  prof.climbFt = climb * 3.281; prof.descentFt = descent * 3.281;
+  prof.avgTemp = tW ? tSum / tW : NaN; prof.minTemp = tMin;
+}
+function sparseMax(arr) {
+  const n = arr.length, K = Math.floor(Math.log2(n)) + 1, t = [Float64Array.from(arr)];
+  for (let k = 1; k < K; k++) {
+    const prev = t[k - 1], len = 1 << k, half = len >> 1, cur = new Float64Array(n - len + 1);
+    for (let i = 0; i + len <= n; i++) cur[i] = Math.max(prev[i], prev[i + half]);
+    t.push(cur);
+  }
+  return t;
+}
+function rangeMax(tbl, l, r) {
+  if (l > r) [l, r] = [r, l];
+  const k = Math.floor(Math.log2(r - l + 1));
+  return Math.max(tbl[k][l], tbl[k][r - (1 << k) + 1]);
+}
+
+/* =====================================================================
+   Stations
+   ===================================================================== */
+const NETWORKS = [
+  [/^tesla$/i, 'Tesla Supercharger'], [/tesla destination/i, 'Tesla Destination'], [/electrify/i, 'Electrify America'],
+  [/evgo/i, 'EVgo'], [/chargepoint/i, 'ChargePoint'], [/blink/i, 'Blink'], [/ionna/i, 'IONNA'], [/walmart/i, 'Walmart'],
+  [/shell/i, 'Shell Recharge'], [/rivian/i, 'Rivian Adventure Network'], [/francis/i, 'Francis Energy'], [/mercedes/i, 'Mercedes-Benz'],
+  [/circle_?k|couche/i, 'Circle K'], [/bp_?pulse|bp pulse/i, 'bp pulse'], [/non-?networked/i, 'Non-networked'], [/volta/i, 'Volta'],
+  [/greenlots/i, 'Shell Recharge'], [/flo\b/i, 'FLO'], [/pilot|flying_?j|gm_?energy/i, 'Pilot / Flying J'],
+];
+function netLabel(net) {
+  for (const [re, label] of NETWORKS) if (re.test(net)) return label;
+  return String(net || 'Unknown network').replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+}
+function defaultKw(s) {
+  const n = s.net.toLowerCase();
+  if (s.isTeslaSC) return 250;
+  if (/ionna|walmart|mercedes/.test(n)) return 350;
+  if (/pilot|flying|gm_?energy/.test(n)) return 350;
+  if (/electrify/.test(n)) return 150;
+  if (/rivian/.test(n)) return 200;
+  if (/francis|shell|circle|bp/.test(n)) return 150;
+  if (/evgo/.test(n)) return 100;
+  if (/chargepoint/.test(n)) return 62;
+  if (/blink/.test(n)) return 50;
+  return 75;
+}
+function parseStation(r) {
+  const net = r.ev_network || 'Non-Networked';
+  const isTeslaDest = /tesla destination/i.test(net);
+  const isTeslaSC = /tesla/i.test(net) && !isTeslaDest;
+  const dc = new Map(), ac = new Map();
+  let sawUnits = false;
+  for (const u of r.ev_charging_units || []) {
+    const con = u && u.connectors;
+    if (!con || typeof con !== 'object') continue;
+    sawUnits = true;
+    const lvl = String(u.charging_level || '').toLowerCase();
+    const unitDC = /dc|fast|3/.test(lvl);
+    const entries = Array.isArray(con) ? con.map(c => [c.connector_type || c.type || c.name, c]) : Object.entries(con);
+    for (const [k0, v] of entries) {
+      if (!k0) continue;
+      const k = String(k0).toUpperCase();
+      const kw = Number(v && v.power_kw) || 0, ports = Number(v && v.port_count) || 0;
+      const isDC = unitDC || k === 'J1772COMBO' || k === 'CHADEMO' || (k === 'TESLA' && !lvl && isTeslaSC);
+      const m = isDC ? dc : ac, prev = m.get(k) || { kw: 0, ports: 0 };
+      m.set(k, { kw: Math.max(prev.kw, kw), ports: prev.ports + ports });
+    }
+  }
+  if (!sawUnits || (!dc.size && !ac.size)) {
+    const dcN = r.ev_dc_fast_num || 0, l2N = r.ev_level2_evse_num || 0;
+    for (const t0 of r.ev_connector_types || []) {
+      const t = String(t0).toUpperCase();
+      if (t === 'J1772COMBO' || t === 'CHADEMO') { if (dcN > 0) dc.set(t, { kw: 0, ports: dcN }); }
+      else if (t === 'TESLA') { if (dcN > 0 && !isTeslaDest) dc.set(t, { kw: 0, ports: dcN }); else ac.set(t, { kw: 0, ports: l2N }); }
+      else if (t === 'J1772') { if (l2N > 0 || (r.ev_level1_evse_num || 0) > 0) ac.set(t, { kw: 0, ports: l2N }); }
+    }
+  }
+  return {
+    id: String(r.id), name: r.station_name || netLabel(net), lat: +r.latitude, lng: +r.longitude,
+    net, netName: netLabel(net), isTeslaSC: isTeslaSC && dc.size > 0, isTeslaDest,
+    addr: [r.street_address, r.city, [r.state, r.zip].filter(Boolean).join(' ')].filter(Boolean).join(', '),
+    city: r.city || '', state: r.state || '',
+    hours: r.access_days_time || '', price: r.ev_pricing || '', web: r.ev_network_web || '', confirmed: r.date_last_confirmed || '',
+    dcN: r.ev_dc_fast_num || 0, l2N: r.ev_level2_evse_num || 0, dc, ac, x: null, off: null,
+  };
+}
+/* Re-evaluated whenever adapters or the car change */
+function assess(s) {
+  const A = S.adapters;
+  const okDC = t => t === 'TESLA' || (t === 'J1772COMBO' && A.ccs) || (t === 'CHADEMO' && A.chademo);
+  const okAC = t => t === 'TESLA' || (t === 'J1772' && A.j1772);
+  const usableDC = [...s.dc].filter(([t]) => okDC(t)), usableAC = [...s.ac].filter(([t]) => okAC(t));
+  const native = usableDC.some(([t]) => t === 'TESLA');
+  let cat;
+  if (s.dc.size) cat = usableDC.length ? (native ? 'native' : 'adapter') : (usableAC.length ? 'l2' : 'none');
+  else cat = usableAC.length ? 'l2' : 'none';
+  let kw = 0;
+  for (const [, v] of usableDC) kw = Math.max(kw, v.kw || 0);
+  const kwKnown = kw > 0;
+  if (!kw && usableDC.length) kw = defaultKw(s);
+  if (native) kw = Math.max(kw, 0);
+  let acKw = 0;
+  for (const [, v] of usableAC) acKw = Math.max(acKw, v.kw || 0);
+  if (!acKw && usableAC.length) acKw = 7.2;
+  const stalls = s.dcN || usableDC.reduce((a, [, v]) => a + (v.ports || 0), 0);
+  s.a = { cat, native, kw, kwKnown, acKw, stalls, usableDC: usableDC.map(x => x[0]), usableAC: usableAC.map(x => x[0]) };
+  return s.a;
+}
+function catColor(cat) {
+  return { native: 'var(--native)', adapter: 'var(--adapter)', l2: 'var(--level2)', none: 'var(--none)' }[cat] || 'var(--none)';
+}
+function catLabel(s) {
+  const a = s.a;
+  if (a.cat === 'native') return s.isTeslaSC ? 'Tesla Supercharger' : `${s.netName} · NACS`;
+  if (a.cat === 'adapter') return `${s.netName} · ${a.usableDC.includes('J1772COMBO') ? 'CCS' : 'CHAdeMO'} via adapter`;
+  if (a.cat === 'l2') return `${s.netName} · Level 2`;
+  return `${s.netName} · needs an adapter you don’t have`;
+}
+function effKw(s) {
+  const c = car(), a = s.a;
+  if (!a || !a.kw) return 0;
+  if (a.native) return Math.min(a.kw, c.peak);
+  /* 400-volt Teslas typically pull ~80–85% of a CCS station's rating through an adapter */
+  return Math.min(a.kw * 0.85, c.peak > 300 ? c.peak : Math.min(c.peak, 200));
+}
+function chargeTable(peakKw) {
+  const c = car(), curve = CURVES[c.chem] || CURVES.nmc, T = new Float64Array(101);
+  for (let s = 0; s < 100; s++) {
+    const p = Math.max(2.5, Math.min(peakKw, c.peak * curveAt(curve, (s + 0.5) / 100)));
+    T[s + 1] = T[s] + c.kwh * 0.01 / p * 60;
+  }
+  return T;
+}
+function tAt(T, soc) {
+  soc = clamp(soc, 0, 100);
+  const i = Math.min(99, Math.floor(soc));
+  return T[i] + (T[i + 1] - T[i]) * (soc - i);
+}
+
+/* =====================================================================
+   Planner: fastest total trip time (driving + detours + charging),
+   Dijkstra over (charger, battery %) states.
+   ===================================================================== */
+class Heap {
+  constructor() { this.k = []; this.v = []; }
+  get size() { return this.k.length; }
+  push(key, val) {
+    const k = this.k, v = this.v;
+    let i = k.length;
+    k.push(key); v.push(val);
+    while (i > 0) { const p = (i - 1) >> 1; if (k[p] <= key) break; k[i] = k[p]; v[i] = v[p]; i = p; }
+    k[i] = key; v[i] = val;
+  }
+  pop() {
+    const k = this.k, v = this.v, topK = k[0], topV = v[0];
+    const lk = k.pop(), lv = v.pop();
+    if (k.length) {
+      let i = 0;
+      const n = k.length;
+      for (;;) {
+        const l = 2 * i + 1, r = l + 1;
+        let m = i, mk = lk;
+        if (l < n && k[l] < mk) { m = l; mk = k[l]; }
+        if (r < n && k[r] < mk) { m = r; mk = k[r]; }
+        if (m === i) break;
+        k[i] = k[m]; v[i] = v[m]; i = m;
+      }
+      k[i] = lk; v[i] = lv;
+    }
+    return [topK, topV];
+  }
+}
+function stationScore(s) { return effKw(s) + (s.isTeslaSC ? 40 : 0) + Math.min(s.a.stalls || 1, 12) * 4 - s.off * 25; }
+function stationPenalty(s) {
+  let p = 0;
+  if (S.preferTesla && !s.isTeslaSC) p += 6;
+  if ((s.a.stalls || 0) <= 2) p += 4;
+  if (!s.a.kwKnown) p += 2;
+  return p;
+}
+function nodeFor(prof, s) {
+  const c = car(), halfMi = s.off * 1.35 + 0.15;
+  const tf = tempFactor(tempAt(prof, sampleIdx(prof, s.x)));
+  return {
+    kind: 'stop', st: s, x: s.x, si: sampleIdx(prof, s.x), E: interp(prof, prof.E, s.x), sec: interp(prof, prof.sec, s.x),
+    halfKWh: halfMi * c.whmi * (SPEED[S.speed] || 1) * tf / 1000, halfMin: halfMi / 25 * 60,
+    overhead: +S.overhead || 0, penalty: stationPenalty(s), T: chargeTable(effKw(s)),
+  };
+}
+function buildNodes(prof, stations) {
+  const cands = stations.filter(s => s.a && (s.a.cat === 'native' || s.a.cat === 'adapter') && effKw(s) >= 40 && s.x != null && s.off <= 12 && s.x > 0.2 && s.x < prof.D - 0.2);
+  let bucket = 1.5, kept = [];
+  for (;;) {
+    const groups = new Map();
+    for (const s of cands) {
+      const k = Math.floor(s.x / bucket);
+      let arr = groups.get(k);
+      if (!arr) groups.set(k, arr = []);
+      arr.push(s);
+    }
+    kept = [];
+    for (const arr of groups.values()) { arr.sort((a, b) => stationScore(b) - stationScore(a)); kept.push(...arr.slice(0, 2)); }
+    if (kept.length <= 320 || bucket > 25) break;
+    bucket *= 1.6;
+  }
+  kept.sort((a, b) => a.x - b.x);
+  const nodes = [{ kind: 'start', x: 0, si: 0, E: 0, sec: 0, halfKWh: 0, halfMin: 0, overhead: 0, penalty: 0 }];
+  for (const s of kept) nodes.push(nodeFor(prof, s));
+  nodes.push({ kind: 'dest', x: prof.D, si: prof.n - 1, E: prof.E[prof.n - 1], sec: prof.sec[prof.n - 1], halfKWh: 0, halfMin: 0, overhead: 0, penalty: 0 });
+  return nodes;
+}
+function solve(prof, nodes, maxCharge) {
+  const c = car(), B = c.kwh, L = 101, N = nodes.length, destK = N - 1;
+  const s0 = clamp(Math.round(S.socNow), 1, 100), res = +S.reserve, dres = +S.destReserve;
+  const best = new Float64Array(N * L).fill(Infinity), prev = new Int32Array(N * L).fill(-1);
+  const H = new Heap();
+  best[s0] = 0; H.push(0, s0);
+  let bestT = Infinity, bestPrev = -1, bestArr = 0, pops = 0;
+  const minWh = c.whmi * 0.45;
+  while (H.size) {
+    const [t, id] = H.pop();
+    if (t > best[id]) continue;
+    if (t >= bestT || ++pops > 3000000) break;
+    const k = (id / L) | 0, s = id - k * L, nk = nodes[k];
+    if (k > 0 && s < maxCharge) {
+      const nid = id + 1, nt = t + (nk.T[s + 1] - nk.T[s]);
+      if (nt < best[nid]) { best[nid] = nt; prev[nid] = id; H.push(nt, nid); }
+    }
+    const reach = (s / 100) * B * 1000 / minWh + 5;
+    for (let j = k + 1; j < N; j++) {
+      const nj = nodes[j];
+      if (nj.x - nk.x > reach) break;
+      const e = nj.E - nk.E + nk.halfKWh + nj.halfKWh;
+      const arr = s - e / B * 100, need = j === destK ? dres : res;
+      if (arr < need) continue;
+      const draw = rangeMax(prof.tbl, nk.si, nj.si) - nk.E + nk.halfKWh;
+      if (s - draw / B * 100 < Math.min(need, res) - 1) continue;
+      const dt = (nj.sec - nk.sec) / 60 + nk.halfMin + nj.halfMin;
+      if (j === destK) {
+        if (t + dt < bestT) { bestT = t + dt; bestPrev = id; bestArr = arr; }
+        continue;
+      }
+      const nid = j * L + Math.floor(arr), nt = t + dt + nj.overhead + nj.penalty;
+      if (nt < best[nid]) { best[nid] = nt; prev[nid] = id; H.push(nt, nid); }
+    }
+  }
+  if (bestPrev < 0) return null;
+  const chain = [];
+  for (let id = bestPrev; id >= 0; id = prev[id]) chain.push(id);
+  chain.reverse();
+  const stops = [];
+  let cur = null;
+  for (const id of chain) {
+    const k = (id / L) | 0, s = id % L;
+    if (k === 0) continue;
+    if (!cur || cur.k !== k) { cur = { k, node: nodes[k], arrive: s, depart: s }; stops.push(cur); }
+    else cur.depart = s;
+  }
+  return { stops, arriveDest: bestArr };
+}
+function biggestGap(nodes) {
+  let g = { from: 0, to: 0, gap: 0 };
+  for (let i = 1; i < nodes.length; i++) {
+    const d = nodes[i].x - nodes[i - 1].x;
+    if (d > g.gap) g = { from: nodes[i - 1].x, to: nodes[i].x, gap: d };
+  }
+  return g;
+}
+/* Battery % through a fixed list of stops on the final route */
+function simulate(route, prof, infos, targets, s0) {
+  const B = car().kwh, legs = route.legs;
+  const out = { legs: [], stops: [], warnings: [] };
+  let s = s0, tMin = 0;
+  const legEnergy = L => {
+    const ea = interp(prof, prof.E, L.startMi), eb = interp(prof, prof.E, L.endMi);
+    const draw = rangeMax(prof.tbl, sampleIdx(prof, L.startMi), sampleIdx(prof, L.endMi)) - ea;
+    return { e: eb - ea, draw: Math.max(0, draw), ea };
+  };
+  for (let i = 0; i < legs.length; i++) {
+    const Lg = legs[i], { e, draw } = legEnergy(Lg), isLast = i === legs.length - 1;
+    const arrive = s - e / B * 100;
+    out.legs.push({ i, startMi: Lg.startMi, endMi: Lg.endMi, distMi: Lg.endMi - Lg.startMi, driveMin: Lg.durationSec / 60, startSoc: s, arriveSoc: arrive, minSoc: s - draw / B * 100, startMin: tMin });
+    tMin += Lg.durationSec / 60;
+    const need = isLast ? +S.destReserve : +S.reserve;
+    if (arrive < need - 0.5) out.warnings.push({ leg: i, arrive, need, last: isLast });
+    if (isLast) { out.arriveSoc = arrive; break; }
+    const nx = legs[i + 1], ne = legEnergy(nx);
+    const needNext = (i + 1 === legs.length - 1 ? +S.destReserve : +S.reserve) + Math.max(ne.e, ne.draw) / B * 100 + 1;
+    let target = targets && targets[i] != null ? targets[i] : Math.min(+S.maxCharge, needNext + 4);
+    target = Math.max(target, needNext);
+    const over = target > +S.maxCharge + 0.5;
+    target = Math.min(100, Math.ceil(target));
+    const arr = Math.max(0, arrive), dep = Math.max(arr, target);
+    const cm = tAt(infos[i].T, dep) - tAt(infos[i].T, arr), stay = cm + (+S.overhead || 0);
+    out.stops.push({ st: infos[i].st, x: Lg.endMi, arriveSoc: arrive, departSoc: dep, chargeMin: cm, stayMin: stay, arriveMin: tMin, departMin: tMin + stay, over, kwh: (dep - arr) / 100 * B });
+    tMin += stay;
+    s = dep;
+  }
+  out.totalMin = tMin;
+  out.driveMin = legs.reduce((a, l) => a + l.durationSec / 60, 0);
+  out.chargeMin = out.stops.reduce((a, x) => a + x.stayMin, 0);
+  return out;
+}
+function socAtX(x) {
+  const sim = st.sim, prof = st.finalProf;
+  if (!sim || !prof) return NaN;
+  const B = car().kwh;
+  const lg = sim.legs.find(l => x <= l.endMi + 1e-6) || sim.legs[sim.legs.length - 1];
+  return lg.startSoc - (interp(prof, prof.E, clamp(x, lg.startMi, lg.endMi)) - interp(prof, prof.E, lg.startMi)) / B * 100;
+}
+
+/* =====================================================================
+   Planning pipeline
+   ===================================================================== */
+function departMs() {
+  const v = $('#departAt').value;
+  if (!v) return Date.now();
+  const t = new Date(v).getTime();
+  return isFinite(t) && t > Date.now() - 5 * 60e3 ? t : Date.now();
+}
+function setStatus(text) {
+  $('#status').innerHTML = text ? `<span class="spin" aria-hidden="true"></span><span>${esc(text)}</span>` : '';
+  $('#results').classList.toggle('dim', !!text && !!st.base);
+}
+async function planRoute() {
+  if (!st.from || !st.to) return;
+  const token = ++planToken;
+  st.custom = null; st.l2 = null;
+  saveRecent();
+  writeHash();
+  setStatus('Finding the best route…');
+  drawEndpoints();
+  try {
+    const routes = await osrmRoute([st.from, st.to], true);
+    if (token !== planToken) return;
+    st.routes = routes; st.routeIdx = 0;
+    await analyzeBase(token);
+  } catch (e) {
+    if (token !== planToken) return;
+    console.error(e);
+    st.base = null; st.final = null; st.sim = null;
+    setStatus('');
+    renderResults(`<div class="banner">${ic('warn')}<div><p><b>No driving route found.</b></p><p>The routing service didn’t answer or couldn’t connect these places by road. Check both locations and try again.</p></div></div>`);
+    drawRoutes();
+  }
+}
+async function analyzeBase(token) {
+  const base = st.routes[st.routeIdx];
+  st.base = base; st.final = null; st.sim = null; st.stations = []; st.stationErr = null; st.wx = null; st.widened = false; st.fitted = false;
+  const prof = makeProfile(base);
+  st.baseProf = prof;
+  drawRoutes(); fitTrip();
+  setStatus('Finding chargers along the route…');
+  const dep = departMs();
+  const [stations] = await Promise.all([
+    loadStations(base, prof, +S.corridor).catch(e => { st.stationErr = e; return []; }),
+    addElevation(prof).catch(() => null),
+    S.weather === 'auto' ? fetchWeather(prof, dep).then(w => { st.wx = w; }).catch(() => null) : null,
+  ]);
+  if (token !== planToken) return;
+  st.stations = stations;
+  st.corridorUsed = +S.corridor;
+  applyWeather(prof, st.wx, dep);
+  await computePlan(token);
+}
+async function loadStations(route, prof, corridor) {
+  const line = simplifyTo(route.coords, 600);
+  const key = corridor + '|' + line.length + '|' + line.map(p => p[0].toFixed(3) + ',' + p[1].toFixed(3)).join(';');
+  let raw = stationCache.get(key);
+  if (!raw) {
+    const wkt = 'LINESTRING(' + line.map(p => `${p[1].toFixed(5)} ${p[0].toFixed(5)}`).join(', ') + ')';
+    const j = await nlr('nearby-route.json', { body: { route: wkt, distance: String(corridor), fuel_type: 'ELEC', status: 'E', access: 'public', ev_charging_level: 'dc_fast', limit: 'all', country: 'all' } });
+    raw = j.fuel_stations || [];
+    stationCache.set(key, raw);
+  }
+  const seen = new Set(), out = [];
+  for (const r of raw) {
+    if (seen.has(r.id)) continue;
+    seen.add(r.id);
+    const s = parseStation(r);
+    if (!isFinite(s.lat) || !isFinite(s.lng)) continue;
+    const p = project(prof, s.lat, s.lng);
+    s.x = p.x; s.off = p.off;
+    out.push(s);
+  }
+  return out.sort((a, b) => a.x - b.x);
+}
+async function computePlan(token) {
+  const prof = st.baseProf;
+  if (!prof) return;
+  computeEnergy(prof);
+  st.stations.forEach(assess);
+  if (st.l2) st.l2.forEach(assess);
+  let stops = [], targets = null, feasible = true, gap = null, overLimit = false;
+  if (st.custom) {
+    stops = st.custom.map(id => st.stations.find(s => s.id === id) || (st.l2 || []).find(s => s.id === id)).filter(Boolean).sort((a, b) => a.x - b.x);
+  } else {
+    const nodes = buildNodes(prof, st.stations);
+    let sol = solve(prof, nodes, +S.maxCharge);
+    if (!sol && +S.maxCharge < 100) { sol = solve(prof, nodes, 100); if (sol) overLimit = true; }
+    if (!sol && !st.widened && !st.stationErr && st.corridorUsed < 10) {
+      st.widened = true;
+      setStatus('Looking farther from the route for chargers…');
+      try {
+        const more = await loadStations(st.base, prof, 10);
+        if (token !== planToken) return;
+        const have = new Set(st.stations.map(s => s.id));
+        st.stations = st.stations.concat(more.filter(s => !have.has(s.id))).sort((a, b) => a.x - b.x);
+        st.corridorUsed = 10;
+        return computePlan(token);
+      } catch (e) { /* keep the narrower set */ }
+    }
+    if (!sol) { feasible = false; gap = biggestGap(nodes); }
+    else { stops = sol.stops.map(x => x.node.st); targets = sol.stops.map(x => x.depart); }
+  }
+  let final = st.base;
+  if (stops.length) {
+    const key = st.routeIdx + '|' + stops.map(s => s.id).join(',') + '|' + st.from.lat.toFixed(5) + st.to.lat.toFixed(5);
+    final = routeCache.get(key) || null;
+    if (!final) {
+      setStatus('Routing through charging stops…');
+      try {
+        const rs = await osrmRoute([st.from, ...stops.map(s => ({ lat: s.lat, lng: s.lng })), st.to]);
+        final = rs[0];
+        if (final.legs.length !== stops.length + 1) throw new Error('Leg mismatch');
+        routeCache.set(key, final);
+      } catch (e) {
+        final = splitRoute(st.base, stops.map(s => s.x));
+      }
+      if (token !== planToken) return;
+    }
+  }
+  let fprof = st.baseProf;
+  if (final !== st.base) {
+    fprof = makeProfile(final);
+    borrowElevation(fprof, st.baseProf);
+    applyWeather(fprof, st.wx, departMs());
+    computeEnergy(fprof);
+  }
+  const infos = stops.map(s => ({ st: s, T: s.a.cat === 'l2' ? chargeTable(Math.min(s.a.acKw, 11.5)) : chargeTable(effKw(s)) }));
+  st.final = final; st.finalProf = fprof;
+  st.sim = simulate(final, fprof, infos, targets, +S.socNow);
+  st.meta = { feasible, gap, overLimit, mode: st.custom ? 'custom' : 'auto', stops };
+  setStatus('');
+  drawRoutes(); drawStations(); drawStops();
+  renderAll();
+  if (isPhone()) { setCompact(true); if (sheetState === 'peek') setSheet('half'); }
+  if (!st.fitted) { st.fitted = true; setTimeout(fitTrip, isPhone() ? 320 : 0); }
+}
+let replanTimer = null;
+function replan(delay = 300) {
+  if (!st.base) return;
+  clearTimeout(replanTimer);
+  replanTimer = setTimeout(() => { const token = ++planToken; computePlan(token); }, delay);
+}
+
+/* =====================================================================
+   Map
+   ===================================================================== */
+const map = L.map('map', { zoomControl: false, preferCanvas: true, worldCopyJump: true, zoomSnap: 0.25, zoomDelta: 0.5, wheelPxPerZoomLevel: 90 }).setView([39.6, -98.6], 4);
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+map.attributionControl.setPrefix('');
+const TILE_ATTR = '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>';
+const tiles = {
+  light: L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 20, attribution: TILE_ATTR }),
+  dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 20, attribution: TILE_ATTR }),
+  sat: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Imagery © Esri, Maxar, Earthstar Geographics' }),
+  satLabels: L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 20, pane: 'overlayPane' }),
+};
+map.createPane('routes').style.zIndex = 410;
+map.createPane('chargers').style.zIndex = 420;
+const routeRenderer = L.canvas({ pane: 'routes', padding: 0.5, tolerance: 8 });
+const chargerRenderer = L.canvas({ pane: 'chargers', padding: 0.3, tolerance: 10 });
+const layers = {
+  routes: L.layerGroup().addTo(map),
+  chargers: L.layerGroup().addTo(map),
+  stops: L.layerGroup().addTo(map),
+  ends: L.layerGroup().addTo(map),
+  me: L.layerGroup().addTo(map),
+};
+function isDark() {
+  const t = document.documentElement.dataset.theme;
+  return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+}
+let currentTiles = [];
+function applyMapStyle() {
+  currentTiles.forEach(t => map.removeLayer(t));
+  const style = S.mapStyle === 'auto' ? (isDark() ? 'dark' : 'light') : S.mapStyle;
+  currentTiles = style === 'sat' ? [tiles.sat, tiles.satLabels] : [tiles[style] || tiles.light];
+  currentTiles.forEach(t => t.addTo(map));
+  renderLayerMenu();
+}
+function applyTheme() {
+  if (S.theme === 'auto') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = S.theme;
+  applyMapStyle();
+  drawRoutes(); drawStations(); drawStops(); drawEndpoints();
+  if (st.sim) drawRibbon();
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (S.theme === 'auto') applyTheme(); });
+map.on('zoomend', () => $('#map').classList.toggle('zlow', map.getZoom() < 7));
+
+function fitTrip() {
+  const r = st.final || st.base;
+  if (!r) return;
+  const b = L.latLngBounds(r.coords);
+  if (isPhone()) {
+    const top = $('#topcard').getBoundingClientRect().bottom, sheetTop = $('#sheet').getBoundingClientRect().top;
+    map.fitBounds(b, { paddingTopLeft: [24, top + 58], paddingBottomRight: [64, window.innerHeight - sheetTop + 18], animate: !reduceMotion });
+  } else {
+    map.fitBounds(b, { paddingTopLeft: [40, 70], paddingBottomRight: [70, 40], animate: !reduceMotion });
+  }
+}
+function socColor(s) {
+  const lo = cssVar('--soc-lo'), mid = cssVar('--soc-mid'), hi = cssVar('--soc-hi');
+  const mix = (a, b, t) => {
+    const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+    const ch = sh => Math.round(((pa >> sh) & 255) + ((((pb >> sh) & 255) - ((pa >> sh) & 255)) * t));
+    return '#' + ((1 << 24) + (ch(16) << 16) + (ch(8) << 8) + ch(0)).toString(16).slice(1);
+  };
+  if (s <= 12) return lo;
+  if (s <= 35) return mix(lo, mid, (s - 12) / 23);
+  if (s <= 60) return mix(mid, hi, (s - 35) / 25);
+  return hi;
+}
+function drawRoutes() {
+  layers.routes.clearLayers();
+  const casing = cssVar('--route-casing'), alt = cssVar('--route-alt');
+  st.routes.forEach((r, i) => {
+    if (i === st.routeIdx || !st.base || D.on) return;
+    L.polyline(r.coords, { renderer: routeRenderer, color: casing, weight: 9, opacity: 0.9, interactive: false }).addTo(layers.routes);
+    L.polyline(r.coords, { renderer: routeRenderer, color: alt, weight: 6, opacity: 1, bubblingMouseEvents: false })
+      .on('click', () => selectRoute(i)).bindTooltip(`Route ${i + 1} · ${fmtDur(r.durationSec / 60)} driving`, { sticky: true }).addTo(layers.routes);
+  });
+  const r = st.final || st.base;
+  if (!r) return;
+  L.polyline(r.coords, { renderer: routeRenderer, color: casing, weight: 11, opacity: 1, interactive: false }).addTo(layers.routes);
+  if (S.colorRoute && st.sim && r === st.final) {
+    const prof = st.finalProf, B = car().kwh;
+    let li = 0, seg = [r.coords[0]], bin = null;
+    const flush = col => { if (seg.length > 1) L.polyline(seg, { renderer: routeRenderer, color: col, weight: 7, opacity: 1, interactive: false }).addTo(layers.routes); };
+    for (let i = 0; i < r.coords.length; i++) {
+      const x = r.cumMi[i];
+      while (li < st.sim.legs.length - 1 && x > st.sim.legs[li].endMi) li++;
+      const lg = st.sim.legs[li];
+      const soc = lg.startSoc - (interp(prof, prof.E, x) - interp(prof, prof.E, lg.startMi)) / B * 100;
+      const b = Math.round(clamp(soc, 0, 100) / 4);
+      if (bin === null) bin = b;
+      seg.push(r.coords[i]);
+      if (b !== bin) { flush(socColor(bin * 4)); seg = [r.coords[i]]; bin = b; }
+    }
+    flush(socColor(bin * 4));
+  } else {
+    L.polyline(r.coords, { renderer: routeRenderer, color: cssVar('--route'), weight: 7, opacity: 1, interactive: false }).addTo(layers.routes);
+  }
+}
+function selectRoute(i) {
+  if (i === st.routeIdx) return;
+  st.routeIdx = i; st.custom = null; st.l2 = null;
+  const token = ++planToken;
+  analyzeBase(token);
+}
+function visibleStations() {
+  const f = S.filters;
+  const list = st.stations.slice();
+  if (f.l2 && st.l2) list.push(...st.l2);
+  return list.filter(s => s.a && ((s.a.cat === 'native' && f.native) || (s.a.cat === 'adapter' && f.adapter) || (s.a.cat === 'l2' && f.l2) || (s.a.cat === 'none' && f.none)));
+}
+function drawStations() {
+  layers.chargers.clearLayers();
+  if (!st.base) return;
+  const stopIds = new Set((st.meta ? st.meta.stops : []).map(s => s.id));
+  const stroke = cssVar('--card');
+  const col = { native: cssVar('--native'), adapter: cssVar('--adapter'), l2: cssVar('--level2'), none: cssVar('--none') };
+  for (const s of visibleStations()) {
+    if (stopIds.has(s.id)) continue;
+    const kw = s.a.cat === 'l2' ? 0 : s.a.kw;
+    const radius = s.a.cat === 'l2' ? 4.5 : kw >= 200 ? 7.5 : kw >= 100 ? 6.5 : 5.5;
+    L.circleMarker([s.lat, s.lng], { renderer: chargerRenderer, radius, color: stroke, weight: 2, fillColor: col[s.a.cat], fillOpacity: 1, bubblingMouseEvents: false })
+      .bindPopup(() => stationPopup(s), { maxWidth: 310, autoPanPaddingTopLeft: [20, 90] })
+      .addTo(layers.chargers);
+  }
+}
+function drawStops() {
+  layers.stops.clearLayers();
+  if (!st.sim) return;
+  st.sim.stops.forEach((p, i) => {
+    const c = catColor(p.st.a.cat);
+    const icon = L.divIcon({ className: 'stop-ic', iconSize: [34, 34], iconAnchor: [17, 17], html: `<div class="stop-pin" style="--c:${c}">${i + 1}</div><div class="stop-tag">${pct(p.arriveSoc)} → ${pct(p.departSoc)}</div>` });
+    L.marker([p.st.lat, p.st.lng], { icon, zIndexOffset: 500, bubblingMouseEvents: false, keyboard: true, title: p.st.name })
+      .bindPopup(() => stationPopup(p.st), { maxWidth: 310, autoPanPaddingTopLeft: [20, 90] })
+      .addTo(layers.stops);
+  });
+}
+function drawEndpoints() {
+  layers.ends.clearLayers();
+  const mk = (p, cls, size, anchor, which) => {
+    const m = L.marker([p.lat, p.lng], { icon: L.divIcon({ className: 'pin-ic', html: `<div class="${cls}"></div>`, iconSize: size, iconAnchor: anchor }), draggable: true, title: p.title, zIndexOffset: 800 });
+    m.on('dragend', async () => {
+      const ll = m.getLatLng();
+      const place = (await reverseGeocode(ll.lat, ll.lng)) || { title: 'Dropped pin', sub: `${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}` };
+      setPlace(which, { ...place, lat: ll.lat, lng: ll.lng });
+    });
+    m.addTo(layers.ends);
+  };
+  if (st.from) mk(st.from, 'pt-from', [20, 20], [10, 10], 'from');
+  if (st.to) mk(st.to, 'pt-to', [28, 28], [14, 34], 'to');
+}
+
+/* Map click: drop a pin with "directions from/to here" */
+map.on('click', e => {
+  if (document.body.classList.contains('driving')) return;
+  const { lat, lng } = e.latlng;
+  const html = `<div class="pop drop-pop"><div class="p-meta" style="margin:0 0 8px">${lat.toFixed(5)}, ${lng.toFixed(5)}</div><div class="p-act"><button class="btn small" data-act="here-from" data-lat="${lat}" data-lng="${lng}">Start here</button><button class="btn small primary" data-act="here-to" data-lat="${lat}" data-lng="${lng}">Go here</button></div></div>`;
+  L.popup({ maxWidth: 260 }).setLatLng(e.latlng).setContent(html).openOn(map);
+});
+
+function connChips(s) {
+  const all = new Map();
+  for (const [t, v] of s.dc) all.set(t, { ...v, dc: true });
+  for (const [t, v] of s.ac) if (!all.has(t)) all.set(t, { ...v, dc: false });
+  const ok = new Set([...s.a.usableDC, ...s.a.usableAC]);
+  return [...all].filter(([t]) => CONN_SVG[t]).map(([t, v]) => {
+    const how = t === 'TESLA' ? 'native' : ok.has(t) ? 'adapter' : 'no adapter';
+    const label = `${CONN_NAME[t]}${v.kw ? ' ' + Math.round(v.kw) + ' kW' : ''}`;
+    return `<span class="conn ${ok.has(t) ? 'ok' : 'no'}" title="${esc(CONN_NAME[t] + ' · ' + how)}">${CONN_SVG[t]}${esc(label)}</span>`;
+  }).join('');
+}
+function gmapsPlace(p) { return `https://www.google.com/maps/search/?api=1&query=${p.lat.toFixed(6)}%2C${p.lng.toFixed(6)}`; }
+function gmapsDir({ origin, destination, waypoints = [], navigate = false }) {
+  const p = new URLSearchParams({ api: '1', travelmode: 'driving' });
+  if (origin) p.set('origin', `${origin.lat.toFixed(6)},${origin.lng.toFixed(6)}`);
+  p.set('destination', `${destination.lat.toFixed(6)},${destination.lng.toFixed(6)}`);
+  if (waypoints.length) p.set('waypoints', waypoints.map(w => `${w.lat.toFixed(6)},${w.lng.toFixed(6)}`).join('|'));
+  if (navigate) p.set('dir_action', 'navigate');
+  return 'https://www.google.com/maps/dir/?' + p.toString();
+}
+function stationPopup(s) {
+  const a = s.a || assess(s);
+  const inPlan = st.meta && st.meta.stops.some(x => x.id === s.id);
+  const stop = st.sim && st.sim.stops.find(x => x.st.id === s.id);
+  const spec = a.cat === 'l2'
+    ? `${s.l2N || '?'} Level 2 ports · ${Math.round(Math.min(a.acKw, 11.5) * 10) / 10} kW`
+    : `${a.kw ? (a.kwKnown ? 'Up to ' : 'About ') + fmtKw(a.kw) : 'Power unknown'}${s.dcN ? ' · ' + s.dcN + (s.isTeslaSC ? ' stalls' : ' fast ports') : ''}`;
+  const where = s.x != null ? `Mile ${Math.round(s.x)} of your route · ${fmtMi(s.off)} off route` : '';
+  return `<div class="pop" style="--c:${catColor(a.cat)}">
+    <div class="p-net"><span class="dot"></span>${esc(catLabel(s))}</div>
+    <h4>${esc(s.name)}</h4>
+    <div class="p-spec">${esc(spec)}</div>
+    <div class="conns">${connChips(s)}</div>
+    ${stop ? `<div class="p-addr"><b>Stop ${st.sim.stops.indexOf(stop) + 1}:</b> arrive ${pct(stop.arriveSoc)}, charge to ${pct(stop.departSoc)} (~${fmtDur(stop.chargeMin)})</div>` : ''}
+    <div class="p-addr">${esc(s.addr)}</div>
+    <div class="p-meta">${esc([where, s.hours && s.hours.length < 60 ? s.hours : '', s.price && s.price.length < 90 ? s.price : ''].filter(Boolean).join(' · '))}</div>
+    <div class="p-act">
+      ${a.cat !== 'none' && st.base ? `<button class="btn ${inPlan ? '' : 'primary'}" data-act="${inPlan ? 'remove-stop' : 'add-stop'}" data-id="${esc(s.id)}">${inPlan ? 'Remove stop' : 'Add as stop'}</button>` : ''}
+      <a class="btn" href="${gmapsDir({ destination: s, navigate: true })}" target="_blank" rel="noopener">${ic('nav', 's')}Navigate</a>
+      <button class="btn" data-act="share-station" data-id="${esc(s.id)}">${ic('share', 's')}Send</button>
+    </div>
+  </div>`;
+}
+function findStation(id) {
+  return st.stations.find(s => s.id === id) || (st.l2 || []).find(s => s.id === id);
+}
+
+/* =====================================================================
+   Directions text
+   ===================================================================== */
+const MOD_ANGLE = { uturn: 180, 'sharp right': 135, right: 90, 'slight right': 40, straight: 0, 'slight left': -40, left: -90, 'sharp left': -135 };
+const ORD = ['', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th'];
+function fmtRef(r) {
+  r = String(r).trim();
+  let m;
+  if ((m = /^I[\s-]?(\d+[A-Z]?)/i.exec(r))) return 'I-' + m[1];
+  if ((m = /^US[\s-]?(\d+[A-Z]?)/i.exec(r))) return 'US-' + m[1];
+  if ((m = /^([A-Z]{2})[\s-]?(\d+[A-Z]?)$/.exec(r))) return m[1] + '-' + m[2];
+  return r;
+}
+function shield(ref) {
+  const r = fmtRef(ref);
+  let m;
+  if ((m = /^I-(\d+)/.exec(r))) return `<span class="sh sh-i${m[1].length > 2 ? ' d3' : ''}" title="${esc(r)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="sh-b" d="M3.2 3h17.6c.6 4.1.2 8.4-1.6 11.6-1.6 2.9-4.2 5-7.2 6.4-3-1.4-5.6-3.5-7.2-6.4C3 11.4 2.6 7.1 3.2 3z"/><path class="sh-t" d="M3.2 3h17.6c.1.9.2 1.9.2 2.9H3c0-1 .1-2 .2-2.9z"/></svg><b>${m[1]}</b><span class="sr">${esc(r)}</span></span>`;
+  if ((m = /^US-(\d+)/.exec(r))) return `<span class="sh sh-us" title="${esc(r)}">${m[1]}<span class="sr"> (US route)</span></span>`;
+  if ((m = /^[A-Z]{2}-(\d+)/.exec(r))) return `<span class="sh sh-st" title="${esc(r)}">${m[1]}<span class="sr"> (${esc(r)})</span></span>`;
+  return `<span class="sh sh-x">${esc(r)}</span>`;
+}
+function roadOf(s) {
+  const refs = (s.ref || '').split(';').map(x => x.trim()).filter(Boolean);
+  const name = (s.name || '').trim();
+  const hwyName = /^(interstate|i-?\s?\d|us\s?\d|u\.s\.|state (route|highway)|highway|hwy|sr[- ]?\d|[a-z]{2}[- ]\d+$)/i.test(name);
+  if (refs.length && (!name || hwyName)) return refs.slice(0, 2).map(r => `⟦${r}⟧`).join(' / ');
+  if (refs.length) return `${name} (⟦${refs[0]}⟧)`;
+  return name;
+}
+function towardOf(s) {
+  if (!s.destinations) return '';
+  let d = s.destinations;
+  if (d.includes(':')) d = d.split(':').slice(1).join(':');
+  d = d.split(',').map(x => x.trim()).filter(Boolean).slice(0, 2).join(' / ');
+  d = d.replace(/\b(I|US)\s(\d+)\b/g, '⟦$1 $2⟧');
+  return d ? ` toward ${d}` : '';
+}
+const side = m => (m || '').includes('left') ? 'left' : (m || '').includes('right') ? 'right' : 'straight';
+function compass(b) { return ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'][Math.round(b / 45) % 8]; }
+function instruction(s, ctx = {}) {
+  const road = roadOf(s), onto = road ? ` onto ${road}` : '', toward = towardOf(s), mod = s.modifier;
+  switch (s.type) {
+    case 'depart': return `Head ${compass(s.bearingAfter)}${road ? ' on ' + road : ''}`;
+    case 'arrive': return ctx.arriveText || 'Arrive at your destination';
+    case 'turn':
+    case 'end of road':
+      if (mod === 'uturn') return `Make a U-turn${onto}`;
+      if (mod === 'straight') return `Continue straight${onto}`;
+      return `Turn ${mod.replace('slight', 'slightly')}${onto}`;
+    case 'new name': return road ? `Continue onto ${road}` : 'Continue straight';
+    case 'continue': return mod === 'uturn' ? 'Make a U-turn' : (mod && mod !== 'straight' ? `Keep ${side(mod)}${onto}` : (road ? `Continue on ${road}` : 'Continue straight'));
+    case 'merge': return `Merge${mod && mod !== 'straight' ? ' ' + side(mod) : ''}${onto || toward}`;
+    case 'on ramp': return `Take the ramp${side(mod) !== 'straight' ? ' on the ' + side(mod) : ''}${onto}${toward}`;
+    case 'off ramp': return `Take ${s.exits ? 'exit ' + s.exits.split(';')[0] : 'the exit'}${side(mod) === 'left' ? ' on the left' : ''}${toward || onto}`;
+    case 'fork': return `Keep ${side(mod)} at the fork${toward || onto}`;
+    case 'roundabout':
+    case 'rotary': return `At the ${s.type === 'rotary' && s.rotary ? s.rotary : 'roundabout'}, take the ${ORD[s.exit] || 'next'} exit${onto}`;
+    case 'roundabout turn': return `At the roundabout, turn ${side(mod)}${onto}`;
+    case 'exit roundabout':
+    case 'exit rotary': return `Exit the roundabout${onto}`;
+    default: return road ? `Continue on ${road}` : 'Continue';
+  }
+}
+const instrHTML = t => esc(t).replace(/⟦([^⟧]+)⟧/g, (_, r) => shield(r));
+const instrText = t => t.replace(/⟦([^⟧]+)⟧/g, (_, r) => fmtRef(r));
+function arrowSVG(a) {
+  const r = toRad(a), x2 = 12 + Math.sin(r) * 8, y2 = 12 - Math.cos(r) * 8, hl = 4.6, hw = toRad(34);
+  const p1 = [x2 - Math.sin(r - hw) * hl, y2 + Math.cos(r - hw) * hl], p2 = [x2 - Math.sin(r + hw) * hl, y2 + Math.cos(r + hw) * hl];
+  return `<svg viewBox="0 0 24 24" class="mi" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-10L${x2.toFixed(1)} ${y2.toFixed(1)}"/><path d="M${p1[0].toFixed(1)} ${p1[1].toFixed(1)}L${x2.toFixed(1)} ${y2.toFixed(1)}L${p2[0].toFixed(1)} ${p2[1].toFixed(1)}"/></svg>`;
+}
+function maneuverIcon(s) {
+  if (s.type === 'arrive') return `<svg viewBox="0 0 24 24" class="mi" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.6" fill="currentColor"/></svg>`;
+  if (s.type === 'depart') return `<svg viewBox="0 0 24 24" class="mi" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="12" cy="17" r="3" fill="currentColor" stroke="none"/><path d="M12 13V4M8.5 7.5 12 4l3.5 3.5"/></svg>`;
+  if (/roundabout|rotary/.test(s.type)) return `<svg viewBox="0 0 24 24" class="mi" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="10" r="4.5"/><path d="M12 22v-7.5M15.2 6.8 19 3M15.5 3H19v3.5"/></svg>`;
+  if (s.modifier === 'uturn') return `<svg viewBox="0 0 24 24" class="mi" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M16 22V9a4 4 0 0 0-8 0v7"/><path d="M4.5 12.5 8 16l3.5-3.5"/></svg>`;
+  let a = MOD_ANGLE[s.modifier] ?? 0;
+  if (/ramp|fork|merge/.test(s.type)) a = Math.sign(a) * Math.min(Math.abs(a), 40);
+  return arrowSVG(a);
+}
+
+/* =====================================================================
+   Panel rendering
+   ===================================================================== */
+function renderResults(html) {
+  const bat = $('#battery');
+  if (bat.parentElement !== $('#sheetBody')) $('#sheetBody').insertBefore(bat, $('#status'));
+  $('#results').innerHTML = html;
+  placeBattery();
+}
+/* On phones the trip summary leads the bottom sheet and the battery sliders follow it */
+function placeBattery() {
+  const bat = $('#battery'), sum = $('#results .summary');
+  if (isPhone() && sum) sum.after(bat);
+  else if (bat.parentElement !== $('#sheetBody')) $('#sheetBody').insertBefore(bat, $('#status'));
+}
+function renderAll() {
+  renderCarChip();
+  if (!st.base) { renderEmpty(); return; }
+  if (!st.sim) return;
+  const r = st.final, sim = st.sim, meta = st.meta, dep = new Date(departMs());
+  const total = sim.totalMin, arrive = new Date(dep.getTime() + total * 60e3);
+  const arr = sim.arriveSoc, stuck = !meta.feasible && !sim.stops.length;
+  const arrCls = stuck || arr < 0 ? 'bad' : arr < +S.destReserve - 0.5 ? 'low' : 'ok';
+  const via = r.summary ? ' · via ' + instrHTML(r.summary.split(',').map(x => x.trim()).filter(Boolean).slice(0, 3).map(x => /^(I|US)\s\d/.test(x) ? `⟦${x}⟧` : x).join(', ')) : '';
+  let h = `<section class="summary">
+    <div class="sum-main"><span class="sum-time">${fmtDur(total)}</span><span class="sum-dist">${fmtMi(r.distanceMi)}</span></div>
+    <div class="sum-sub">${stuck ? 'Driving time only' : 'Arrive ' + fmtClock(arrive, dep)}${via}</div>
+    <div class="kpis">
+      <div class="kpi"><b>${sim.stops.length}</b><span>${sim.stops.length === 1 ? 'charging stop' : 'charging stops'}</span></div>
+      <div class="kpi"><b>${sim.stops.length ? fmtDur(sim.chargeMin) : '—'}</b><span>at chargers</span></div>
+      <div class="kpi ${arrCls}"><b>${stuck ? 'Short' : pct(arr)}</b><span>${stuck ? 'out of range' : 'battery at arrival'}</span></div>
+    </div>`;
+  if (st.routes.length > 1 && st.routeIdx < st.routes.length) {
+    h += `<div class="routeopts" role="group" aria-label="Route options">${st.routes.map((x, i) => `<button class="ropt" data-act="route" data-i="${i}" aria-pressed="${i === st.routeIdx}"><b>${fmtDur(x.durationSec / 60)}</b>${fmtMi(x.distanceMi)} driving${i === 0 ? ' · fastest' : ''}</button>`).join('')}</div>`;
+  }
+  h += `<div class="actions">
+      <button class="btn primary" data-act="start">${ic('play', 's')}${S.simulate ? 'Preview drive' : 'Start'}</button>
+      ${googleButtons()}
+      <button class="btn" data-act="share-trip">${ic('share', 's')}Share</button>
+    </div>${googleParts()}</section>`;
+  h += planBanners();
+  h += `<section class="sec"><div class="sec-h"><h3>Battery along the way</h3><span class="muted">${esc(car().short)} · ${Math.round(car().kwh)} kWh</span></div>
+    <div class="ribbon"><svg id="ribbonSvg" role="img" aria-label="Battery percentage across the trip"></svg>${conditionsLine()}</div></section>`;
+  h += itineraryHTML();
+  h += chargerListHTML();
+  h += directionsHTML();
+  h += footHTML();
+  renderResults(h);
+  drawRibbon();
+}
+function googleStops() { return st.sim ? st.sim.stops.map(p => p.st) : []; }
+function googleParts() {
+  const stops = googleStops();
+  if (stops.length <= 9) return '';
+  const pts = [st.from, ...stops, st.to], parts = [];
+  for (let i = 0; i < pts.length - 1; i += 10) {
+    const end = Math.min(pts.length - 1, i + 10);
+    parts.push(gmapsDir({ origin: i === 0 && st.from.isMe ? null : pts[i], destination: pts[end], waypoints: pts.slice(i + 1, end) }));
+  }
+  return `<div class="parts">Google Maps takes 9 stops per link:${parts.map((u, i) => `<a class="btn small" href="${u}" target="_blank" rel="noopener">Part ${i + 1}</a>`).join('')}</div>`;
+}
+function googleButtons() {
+  const stops = googleStops();
+  if (stops.length > 9) return '';
+  const url = gmapsDir({ origin: st.from.isMe ? null : st.from, destination: st.to, waypoints: stops });
+  return `<a class="btn" href="${url}" target="_blank" rel="noopener">${ic('map', 's')}Google Maps</a>`;
+}
+function planBanners() {
+  const meta = st.meta, sim = st.sim, out = [];
+  if (st.stationErr) out.push(`<div class="banner">${ic('warn')}<div><p><b>Charger data didn’t load.</b> ${esc(nlrError(st.stationErr))}${meta.feasible ? '' : ' Charging stops can’t be planned until it does.'}</p><p><button class="link-btn" data-act="retry">Try again</button></p></div></div>`);
+  if (!meta.feasible && meta.gap && !st.stationErr) {
+    const fullRange = (100 - +S.reserve) / 100 * car().kwh * 1000 / car().whmi;
+    out.push(`<div class="banner">${ic('warn')}<div><p><b>This trip doesn’t work with your adapters yet.</b> There’s no usable fast charger for ${fmtMi(meta.gap.gap)} (mile ${Math.round(meta.gap.from)} to ${Math.round(meta.gap.to)}). Your highway range from 100% is about ${fmtMi(fullRange)}.</p><p>Try starting with more charge, turning on another adapter in Settings, or tap a charger on the map to add it yourself.</p></div></div>`);
+  }
+  if (meta.overLimit) out.push(`<div class="banner">${ic('info')}<div><p>Some stops need charging past your ${S.maxCharge}% limit to bridge long gaps between chargers.</p></div></div>`);
+  if (meta.mode === 'custom') out.push(`<div class="banner info">${ic('info')}<div><p>You’re using your own charging stops. <button class="link-btn" data-act="auto">Go back to the fastest plan</button></p></div></div>`);
+  if (sim.warnings.length && meta.feasible) {
+    const w = sim.warnings[0];
+    out.push(`<div class="banner">${ic('warn')}<div><p><b>${w.arrive < 0 ? 'Not enough range' : 'Low arrival'}:</b> leg ${w.leg + 1} arrives at ${pct(w.arrive)}, below your ${w.need}% minimum. ${meta.mode === 'custom' ? 'Add a stop before it or remove one you added.' : 'Start with more charge or allow higher charging.'}</p></div></div>`);
+  }
+  if (st.corridorUsed > +S.corridor && meta.feasible) out.push(`<div class="banner info">${ic('info')}<div><p>Chargers were sparse near the route, so the search widened to 10 miles off route.</p></div></div>`);
+  if (st.final && st.final.approx) out.push(`<div class="banner info">${ic('info')}<div><p>Couldn’t route the detours into each charger, so times are approximate. Google Maps will handle the exits.</p></div></div>`);
+  return out.join('');
+}
+function conditionsLine() {
+  const p = st.finalProf, bits = [];
+  if (S.weather === 'manual') bits.push(`<span>Temperature <b>${Math.round(S.manualTempF)}°F</b> (your setting)</span>`);
+  else if (isFinite(p.avgTemp)) bits.push(`<span>Forecast <b>${Math.round(p.avgTemp)}°F</b> avg, low ${Math.round(p.minTemp)}°F</span>`);
+  else bits.push('<span>No forecast for this date, assuming mild weather</span>');
+  if (p.elev) bits.push(`<span>Climb <b>${nf.format(Math.round(p.climbFt / 10) * 10)} ft</b> · descend ${nf.format(Math.round(p.descentFt / 10) * 10)} ft</span>`);
+  const used = p.E[p.n - 1], whmi = used / p.D * 1000;
+  bits.push(`<span>About <b>${Math.round(whmi)} Wh/mi</b> expected</span>`);
+  return `<div class="cond">${bits.join('')}</div>`;
+}
+function itineraryHTML() {
+  const sim = st.sim, dep = new Date(departMs()), when = m => fmtClock(new Date(dep.getTime() + m * 60e3), dep);
+  let h = `<section class="sec"><div class="sec-h"><h3>Trip plan</h3><span class="muted">${sim.stops.length ? 'Charging stops are numbered on the map' : ''}</span></div><ol class="itin">`;
+  h += `<li class="it"><div class="it-mark"><span class="mk"></span></div><div class="it-body"><div class="it-title">${esc(st.from.title)}</div><div class="it-meta">Leave ${when(0)} with ${pct(S.socNow)}</div></div></li>`;
+  sim.legs.forEach((lg, i) => {
+    const warn = sim.warnings.some(w => w.leg === i);
+    h += `<li class="it it-leg${warn ? ' warn' : ''}"><div class="it-mark"></div><div class="it-body"><b>${fmtMi(lg.distMi)}</b> · ${fmtDur(lg.driveMin)} · uses ${Math.max(0, Math.round(lg.startSoc - lg.arriveSoc))}%${lg.minSoc < lg.arriveSoc - 2 ? ` · dips to ${pct(lg.minSoc)}` : ''}</div></li>`;
+    const p = sim.stops[i];
+    if (p) {
+      const s = p.st, c = catColor(s.a.cat);
+      h += `<li class="it it-stop"><div class="it-mark"><span class="mk stop" style="--c:${c}">${i + 1}</span></div><div class="it-body" style="--c:${c}">
+        <div class="it-net">${esc(catLabel(s))}</div>
+        <div class="it-row"><button class="cname" data-act="zoom" data-id="${esc(s.id)}" style="white-space:normal">${esc(s.name)}</button><span class="it-charge">${fmtDur(p.chargeMin)}</span></div>
+        <div class="it-meta">${esc(s.city ? s.city + (s.state ? ', ' + s.state : '') : s.addr)} · ${s.a.kw ? (s.a.kwKnown ? '' : '~') + fmtKw(s.a.kw) : ''}${s.dcN ? ' · ' + s.dcN + (s.isTeslaSC ? ' stalls' : ' ports') : ''}${s.off > 0.3 ? ' · ' + fmtMi(s.off) + ' off route' : ''}</div>
+        <div class="socbar" aria-label="Arrive ${pct(p.arriveSoc)}, leave ${pct(p.departSoc)}"><span>${pct(p.arriveSoc)}</span><span class="bar"><i class="a" style="left:0;width:${clamp(p.arriveSoc, 0, 100)}%"></i><i class="b" style="left:${clamp(p.arriveSoc, 0, 100)}%;width:${clamp(p.departSoc - Math.max(0, p.arriveSoc), 0, 100)}%"></i></span><span>${pct(p.departSoc)}</span></div>
+        <div class="it-meta">${when(p.arriveMin)} – ${when(p.departMin)} · adds ${Math.round(p.kwh)} kWh${p.over ? ' · above your limit' : ''}</div>
+        <div class="it-actions">
+          <a class="btn small" href="${gmapsDir({ destination: s, navigate: true })}" target="_blank" rel="noopener">${ic('nav', 's')}Navigate</a>
+          <button class="btn small" data-act="share-station" data-id="${esc(s.id)}">${ic('share', 's')}Send to car</button>
+          <button class="btn small ghost" data-act="remove-stop" data-id="${esc(s.id)}">Remove</button>
+        </div></div></li>`;
+    }
+  });
+  h += `<li class="it"><div class="it-mark"><span class="mk to"></span></div><div class="it-body"><div class="it-title">${esc(st.to.title)}</div><div class="it-meta">Arrive ${when(sim.totalMin)} with ${pct(sim.arriveSoc)}</div></div></li></ol></section>`;
+  return h;
+}
+function chargerListHTML() {
+  const all = st.stations.concat(st.l2 || []);
+  const counts = { usable: 0, native: 0, adapter: 0, l2: 0 };
+  for (const s of all) {
+    if (s.a.cat === 'native') { counts.native++; counts.usable++; }
+    else if (s.a.cat === 'adapter') { counts.adapter++; counts.usable++; }
+    else if (s.a.cat === 'l2') counts.l2++;
+  }
+  const tab = st.listTab;
+  let list = all.filter(s => tab === 'usable' ? (s.a.cat === 'native' || s.a.cat === 'adapter') : s.a.cat === tab);
+  list.sort((a, b) => a.x - b.x);
+  const total = list.length;
+  if (!st.listAll) list = list.slice(0, 60);
+  const stopIds = new Set(st.meta.stops.map(s => s.id));
+  const tabBtn = (k, label, c) => `<button class="tab" data-act="tab" data-tab="${k}" aria-pressed="${tab === k}">${c ? `<span class="dot" style="--c:${c}"></span>` : ''}${label}${k === 'l2' && !st.l2 ? '' : ` <span class="num">${counts[k]}</span>`}</button>`;
+  let h = `<section class="sec"><div class="sec-h"><h3>Chargers on this route</h3><span class="muted">within ${st.corridorUsed} mi</span></div>
+    <div class="tabs" role="group" aria-label="Charger types">${tabBtn('usable', 'You can use')}${tabBtn('native', 'Tesla & NACS', 'var(--native)')}${tabBtn('adapter', 'Via adapter', 'var(--adapter)')}${tabBtn('l2', 'Level 2', 'var(--level2)')}</div>`;
+  if (tab === 'l2' && !st.l2) {
+    h += `<div class="banner info">${ic('info')}<div><p>Level 2 is too slow for highway stops but handy at your destination or overnight.</p><p><button class="link-btn" data-act="load-l2">${st.l2Loading ? 'Loading…' : 'Load Level 2 chargers'}</button></p></div></div>`;
+  } else if (!total) {
+    h += `<p class="muted">None found within ${st.corridorUsed} miles of this route.</p>`;
+  } else {
+    h += `<ul class="clist">${list.map(s => {
+      const added = stopIds.has(s.id);
+      return `<li class="citem"><div class="cmile">${Math.round(s.x)}<small>mile</small></div>
+        <div style="min-width:0"><button class="cname" data-act="zoom" data-id="${esc(s.id)}">${esc(s.name)}</button>
+        <div class="cmeta"><span class="dot" style="--c:${catColor(s.a.cat)}"></span>${esc(s.netName)} · ${s.a.cat === 'l2' ? 'Level 2' : (s.a.kwKnown ? '' : '~') + fmtKw(s.a.kw)}${s.dcN ? ' · ' + s.dcN : ''}${s.a.cat === 'adapter' ? ' · adapter' : ''} · ${fmtMi(s.off)} off</div></div>
+        <button class="cadd" data-act="${added ? 'remove-stop' : 'add-stop'}" data-id="${esc(s.id)}" aria-pressed="${added}" aria-label="${added ? 'Remove' : 'Add'} ${esc(s.name)} ${added ? 'from' : 'as'} a stop">${ic(added ? 'check' : 'plus', 's')}</button></li>`;
+    }).join('')}</ul>`;
+    if (total > list.length) h += `<button class="btn small" style="margin-top:8px" data-act="list-all">Show all ${total}</button>`;
+  }
+  return h + '</section>';
+}
+function directionsHTML() {
+  const r = st.final;
+  const steps = r.legs.flatMap(l => l.steps);
+  if (!steps.length) return '';
+  let h = `<section class="sec"><details class="dirs"><summary><span>Turn-by-turn directions</span>${ic('chev')}</summary><ol class="dlist">`;
+  r.legs.forEach((lg, li) => {
+    if (r.legs.length > 1) {
+      const to = li < st.sim.stops.length ? `Stop ${li + 1}: ${st.sim.stops[li].st.name}` : st.to.title;
+      h += `<li class="dleg">To ${esc(to)}</li>`;
+    }
+    lg.steps.forEach((s, si) => {
+      const arriveText = li < st.sim.stops.length ? `Arrive at ${st.sim.stops[li].st.name}` : `Arrive at ${st.to.title}`;
+      if (s.type === 'depart' && li > 0) return;
+      h += `<li class="dstep">${maneuverIcon(s)}<span>${instrHTML(instruction(s, { arriveText }))}</span><span class="dd">${s.type === 'arrive' ? '' : fmtMi(s.distMi)}</span></li>`;
+    });
+  });
+  return h + '</ol></details></section>';
+}
+function footHTML() {
+  return `<p class="foot">Chargers: DOE Alternative Fuels Data Center via NLR. Routes: OSRM on OpenStreetMap. Elevation and forecast: Open-Meteo. Battery numbers are estimates from your car profile; stall availability isn’t live, so check the Tesla app before you commit to a third-party stop.</p>`;
+}
+function drawRibbon() {
+  const svg = $('#ribbonSvg');
+  if (!svg || !st.sim) return;
+  const W = Math.max(260, Math.round(svg.getBoundingClientRect().width) || 360), H = 136;
+  const padL = 34, padR = 12, padT = 16, padB = 22;
+  const prof = st.finalProf, sim = st.sim, D = prof.D, B = car().kwh;
+  const X = x => padL + (W - padL - padR) * (x / D), Y = s => padT + (H - padT - padB) * (1 - clamp(s, 0, 100) / 100);
+  const pts = [];
+  sim.legs.forEach(lg => {
+    const n = Math.max(2, Math.ceil((lg.endMi - lg.startMi) / (D / 240)));
+    const ea = interp(prof, prof.E, lg.startMi);
+    for (let k = 0; k <= n; k++) {
+      const x = lg.startMi + (lg.endMi - lg.startMi) * k / n;
+      pts.push([X(x), Y(lg.startSoc - (interp(prof, prof.E, x) - ea) / B * 100)]);
+    }
+  });
+  const line = 'M' + pts.map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join('L');
+  const area = line + `L${X(D).toFixed(1)} ${Y(0)}L${X(0).toFixed(1)} ${Y(0)}Z`;
+  const steps = [10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000];
+  const tick = steps.find(s => D / s <= 5) || 5000;
+  let grid = '';
+  for (const s of [0, 50, 100]) grid += `<line class="rb-grid" x1="${padL}" x2="${W - padR}" y1="${Y(s)}" y2="${Y(s)}"/><text class="rb-lab" x="${padL - 6}" y="${Y(s) + 4}" text-anchor="end">${s}%</text>`;
+  for (let x = 0; x <= D + 1e-6; x += tick) grid += `<text class="rb-lab" x="${X(x)}" y="${H - 6}" text-anchor="${x === 0 ? 'start' : 'middle'}">${nf.format(x)}${x === 0 ? ' mi' : ''}</text>`;
+  const res = `<line class="rb-res" x1="${padL}" x2="${W - padR}" y1="${Y(+S.reserve)}" y2="${Y(+S.reserve)}"/>`;
+  let marks = '';
+  sim.stops.forEach((p, i) => {
+    const cx = X(p.x), cy = Y(p.departSoc) - 9;
+    marks += `<circle class="rb-stop" cx="${cx}" cy="${cy}" r="8" style="fill:${catColor(p.st.a.cat)}"/><text class="rb-num" x="${cx}" y="${cy + 3.5}" text-anchor="middle">${i + 1}</text>`;
+  });
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = `<defs><linearGradient id="rbg" gradientUnits="userSpaceOnUse" x1="0" y1="${Y(100)}" x2="0" y2="${Y(0)}"><stop offset="0" class="g-hi"/><stop offset=".4" class="g-hi"/><stop offset=".65" class="g-mid"/><stop offset=".88" class="g-lo"/><stop offset="1" class="g-lo"/></linearGradient></defs>${grid}${res}<path class="rb-area" d="${area}" fill="url(#rbg)"/><path class="rb-line" d="${line}" stroke="url(#rbg)"/>${marks}`;
+}
+function renderEmpty() {
+  const rec = store.get('recent', []);
+  const options = Object.entries(VEHICLES).map(([k, v]) => `<option value="${k}"${S.vehicle === k ? ' selected' : ''}>${esc(v.name)} (${esc(v.years)})</option>`).join('') + `<option value="custom"${S.vehicle === 'custom' ? ' selected' : ''}>Custom…</option>`;
+  const examples = [
+    { from: { lat: 47.6062, lng: -122.3321, title: 'Seattle', sub: 'WA' }, to: { lat: 43.615, lng: -116.2023, title: 'Boise', sub: 'ID' } },
+    { from: { lat: 34.0522, lng: -118.2437, title: 'Los Angeles', sub: 'CA' }, to: { lat: 36.1716, lng: -115.1391, title: 'Las Vegas', sub: 'NV' } },
+  ];
+  window.__examples = examples;
+  renderResults(`<section class="empty">
+    <h2>Where to?</h2>
+    <p>Pick a start and a destination, or tap the map. Stops are planned with Superchargers plus every charger your adapters unlock.</p>
+    <div class="carcard">
+      <label class="sr" for="quickVehicle">Your Tesla</label>
+      <select id="quickVehicle" data-quick="vehicle">${options}</select>
+      <label class="chk"><input type="checkbox" data-quick="adapters.ccs"${S.adapters.ccs ? ' checked' : ''}><span><b>CCS1 adapter</b><small>DC fast at Electrify America, EVgo, ChargePoint and more</small></span></label>
+      <label class="chk"><input type="checkbox" data-quick="adapters.j1772"${S.adapters.j1772 ? ' checked' : ''}><span><b>J1772 adapter</b><small>Public Level 2 posts</small></span></label>
+    </div>
+    <div class="sec"><div class="sec-h"><h3>${rec.length ? 'Recent trips' : 'Try a trip'}</h3></div>
+    <ul class="reclist">${(rec.length ? rec : examples).map((t, i) => `<li><button data-act="${rec.length ? 'recent' : 'example'}" data-i="${i}">${ic(rec.length ? 'clock' : 'route')}<span style="min-width:0"><span class="t">${esc(t.from.title)} → ${esc(t.to.title)}</span><span class="s">${esc([t.from.sub, t.to.sub].filter(Boolean).join(' to '))}</span></span></button></li>`).join('')}</ul></div>
+    ${footHTML()}
+  </section>`);
+}
+function renderCarChip() {
+  const c = car();
+  $('#carChip').innerHTML = `${ic('car', 's')}<span><b>${esc(c.short)}</b> · ${esc(adapterText())}</span>`;
+}
+function syncBattery() {
+  for (const k of ['socNow', 'maxCharge', 'destReserve']) {
+    $('#' + k).value = S[k];
+    $('#' + k + 'Out').textContent = `${S[k]}%`;
+  }
+}
+
+/* =====================================================================
+   Places and search box
+   ===================================================================== */
+function setPlace(which, place, opts = {}) {
+  st[which] = place;
+  $(which === 'from' ? '#fromInput' : '#toInput').value = place ? (place.isMe ? place.title : place.title + (place.sub ? ', ' + place.sub : '')) : '';
+  if (place && !place.isMe) remember(place);
+  drawEndpoints();
+  updateCompact();
+  if (opts.noPlan) return;
+  if (st.from && st.to) planRoute();
+  else if (place) map.setView([place.lat, place.lng], Math.max(map.getZoom(), 9), { animate: !reduceMotion });
+}
+function remember(p) {
+  const list = store.get('places', []).filter(x => Math.abs(x.lat - p.lat) > 1e-5 || Math.abs(x.lng - p.lng) > 1e-5);
+  list.unshift({ lat: p.lat, lng: p.lng, title: p.title, sub: p.sub || '' });
+  store.set('places', list.slice(0, 8));
+}
+function saveRecent() {
+  if (!st.from || !st.to) return;
+  const strip = p => ({ lat: p.lat, lng: p.lng, title: p.title, sub: p.sub || '', isMe: !!p.isMe });
+  const list = store.get('recent', []).filter(t => !(Math.abs(t.from.lat - st.from.lat) < 1e-4 && Math.abs(t.to.lat - st.to.lat) < 1e-4 && Math.abs(t.to.lng - st.to.lng) < 1e-4));
+  list.unshift({ from: strip(st.from), to: strip(st.to) });
+  store.set('recent', list.slice(0, 6));
+}
+function writeHash() {
+  if (!st.from || !st.to) return;
+  const enc = p => `${p.lat.toFixed(5)},${p.lng.toFixed(5)},${encodeURIComponent(p.title)}`;
+  try { history.replaceState(null, '', `#trip=${enc(st.from)}|${enc(st.to)}`); } catch { /* ignore */ }
+}
+function readHash() {
+  const m = /trip=([^|]+)\|(.+)$/.exec(location.hash);
+  if (!m) return false;
+  const dec = s => { const [la, ln, ...t] = s.split(','); return { lat: +la, lng: +ln, title: decodeURIComponent(t.join(',')) || 'Pinned place', sub: '' }; };
+  const a = dec(m[1]), b = dec(m[2]);
+  if (![a.lat, a.lng, b.lat, b.lng].every(isFinite)) return false;
+  st.from = a; st.to = b;
+  $('#fromInput').value = a.title; $('#toInput').value = b.title;
+  updateCompact();
+  return true;
+}
+function myLocation() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error('Location isn’t available in this browser.'));
+    navigator.geolocation.getCurrentPosition(p => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy }),
+      e => reject(new Error(e.code === 1 ? 'Location permission is off for this page. Allow it in your browser settings.' : 'Couldn’t get your location. Try again outside or near a window.')),
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 });
+  });
+}
+async function useMyLocation(which = 'from') {
+  toast('Finding your location…');
+  try {
+    const p = await myLocation();
+    showMe(p);
+    const near = await reverseGeocode(p.lat, p.lng);
+    setPlace(which, { lat: p.lat, lng: p.lng, title: 'Your location', sub: near ? [near.title, near.sub].filter(Boolean).join(', ') : '', isMe: true });
+    hideToast();
+  } catch (e) { toast(e.message, 4000); }
+}
+function showMe(p) {
+  layers.me.clearLayers();
+  L.marker([p.lat, p.lng], { icon: L.divIcon({ className: 'me-ic', html: '<div class="me-dot"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }), interactive: false, keyboard: false }).addTo(layers.me);
+}
+
+const sug = { el: $('#suggest'), input: null, items: [], active: -1, ctrl: null, timer: null };
+function suggestFor(input) {
+  sug.input = input;
+  const which = input.id === 'fromInput' ? 'from' : 'to';
+  const field = input.closest('.field');
+  sug.el.style.top = (field.offsetTop + field.offsetHeight + 4) + 'px';
+  return which;
+}
+function renderSuggest(items, note) {
+  sug.items = items; sug.active = items.length ? 0 : -1;
+  if (!items.length && !note) { hideSuggest(); return; }
+  sug.el.innerHTML = items.map((p, i) => `<li role="option" id="sg${i}" aria-selected="${i === sug.active}" data-i="${i}"><span class="s-i">${ic(p.icon || 'pin', 's')}</span><span style="min-width:0"><div class="s-t">${esc(p.title)}</div>${p.sub ? `<div class="s-s">${esc(p.sub)}</div>` : ''}</span></li>`).join('') + (note ? `<li class="s-note">${esc(note)}</li>` : '');
+  sug.el.hidden = false;
+  sug.input && sug.input.setAttribute('aria-expanded', 'true');
+}
+function hideSuggest() {
+  sug.el.hidden = true;
+  $$('[role=combobox]').forEach(i => i.setAttribute('aria-expanded', 'false'));
+}
+function defaultSuggestions() {
+  const out = [{ title: 'Your location', sub: 'Use GPS', icon: 'me', me: true }];
+  for (const p of store.get('places', [])) out.push({ ...p, icon: 'clock' });
+  return out.slice(0, 7);
+}
+function pickSuggestion(i) {
+  const p = sug.items[i];
+  if (!p || !sug.input) return;
+  const which = sug.input.id === 'fromInput' ? 'from' : 'to';
+  hideSuggest();
+  if (p.me) { useMyLocation(which); return; }
+  setPlace(which, { lat: p.lat, lng: p.lng, title: p.title, sub: p.sub || '' });
+  if (which === 'from' && !st.to) $('#toInput').focus();
+  else sug.input.blur();
+}
+function parseLatLng(q) {
+  const m = /^\s*(-?\d{1,2}(?:\.\d+)?)\s*[, ]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/.exec(q);
+  if (!m) return null;
+  const lat = +m[1], lng = +m[2];
+  return Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng, title: 'Dropped pin', sub: `${lat.toFixed(5)}, ${lng.toFixed(5)}` } : null;
+}
+async function runSearch(q, explicit = false) {
+  if (sug.ctrl) sug.ctrl.abort();
+  const ll = parseLatLng(q);
+  if (ll) { renderSuggest([{ ...ll, icon: 'pin' }]); return; }
+  if (q.trim().length < 3) { renderSuggest(defaultSuggestions()); return; }
+  const ctrl = sug.ctrl = new AbortController();
+  try {
+    const res = await geocode(q, ctrl.signal, explicit);
+    if (ctrl.signal.aborted) return;
+    renderSuggest(res, res.length ? '' : 'No matches. Try adding a city or state.');
+  } catch (e) {
+    if (!ctrl.signal.aborted) renderSuggest([], 'Search isn’t responding. Check your connection.');
+  }
+}
+for (const input of [$('#fromInput'), $('#toInput')]) {
+  input.addEventListener('focus', () => {
+    suggestFor(input);
+    if (!input.value.trim() || st[input.id === 'fromInput' ? 'from' : 'to']) { input.select(); renderSuggest(defaultSuggestions()); }
+  });
+  input.addEventListener('input', () => {
+    suggestFor(input);
+    st[input.id === 'fromInput' ? 'from' : 'to'] = null;
+    clearTimeout(sug.timer);
+    sug.timer = setTimeout(() => runSearch(input.value), 260);
+  });
+  input.addEventListener('keydown', async e => {
+    if (sug.el.hidden && e.key !== 'Enter') return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!sug.items.length) return;
+      sug.active = (sug.active + (e.key === 'ArrowDown' ? 1 : -1) + sug.items.length) % sug.items.length;
+      $$('li[role=option]', sug.el).forEach((li, i) => li.setAttribute('aria-selected', String(i === sug.active)));
+      input.setAttribute('aria-activedescendant', 'sg' + sug.active);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (!sug.el.hidden && sug.active >= 0) pickSuggestion(sug.active);
+      else if (input.value.trim().length >= 3) {
+        suggestFor(input);
+        await runSearch(input.value, true);
+        if (sug.items.length) pickSuggestion(0);
+      }
+    } else if (e.key === 'Escape') hideSuggest();
+  });
+  input.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== input) hideSuggest(); }, 180));
+}
+sug.el.addEventListener('mousedown', e => e.preventDefault());
+sug.el.addEventListener('click', e => { const li = e.target.closest('li[data-i]'); if (li) pickSuggestion(+li.dataset.i); });
+
+/* =====================================================================
+   Phone layout: compact search card + snap bottom sheet
+   ===================================================================== */
+let sheetState = 'half';
+function sheetHeights() {
+  const H = window.innerHeight, top = $('#topcard').getBoundingClientRect().bottom;
+  return { peek: 176, half: Math.round(H * 0.44), full: Math.max(260, Math.round(H - top - 10)) };
+}
+function setSheet(state) {
+  sheetState = state;
+  if (!isPhone()) return;
+  document.documentElement.style.setProperty('--sheet-h', sheetHeights()[state] + 'px');
+  $('#sheet').dataset.state = state;
+  setTimeout(() => map.invalidateSize(), 300);
+}
+function setCompact(on) {
+  $('#topcard').classList.toggle('compact', !!on && isPhone() && !!st.from && !!st.to);
+  updateTopH();
+}
+function updateCompact() {
+  $('#compactTrip').innerHTML = `${ic('route', 's')}<span>${esc(st.from ? st.from.title : 'Start')} → ${esc(st.to ? st.to.title : 'Destination')}</span>`;
+}
+function updateTopH() {
+  const tc = $('#topcard').getBoundingClientRect();
+  document.documentElement.style.setProperty('--top-h', (isPhone() ? tc.bottom : 0) + 'px');
+  if (isPhone() && sheetState === 'full') setSheet('full');
+}
+(() => {
+  const handle = $('#handle'), sheet = $('#sheet');
+  let startY = 0, startH = 0, dragging = false, moved = false;
+  handle.addEventListener('pointerdown', e => {
+    if (!isPhone()) return;
+    dragging = true; moved = false; startY = e.clientY; startH = sheet.getBoundingClientRect().height;
+    sheet.classList.add('dragging');
+    handle.setPointerCapture(e.pointerId);
+  });
+  handle.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const dy = e.clientY - startY;
+    if (Math.abs(dy) > 4) moved = true;
+    const hs = sheetHeights();
+    document.documentElement.style.setProperty('--sheet-h', clamp(startH - dy, hs.peek - 40, hs.full) + 'px');
+  });
+  const end = () => {
+    if (!dragging) return;
+    dragging = false;
+    sheet.classList.remove('dragging');
+    const h = sheet.getBoundingClientRect().height, hs = sheetHeights();
+    if (!moved) { setSheet(sheetState === 'peek' ? 'half' : sheetState === 'half' ? 'full' : 'peek'); return; }
+    const best = Object.entries(hs).sort((a, b) => Math.abs(a[1] - h) - Math.abs(b[1] - h))[0][0];
+    setSheet(best);
+  };
+  handle.addEventListener('pointerup', end);
+  handle.addEventListener('pointercancel', end);
+})();
+new ResizeObserver(updateTopH).observe($('#topcard'));
+window.addEventListener('resize', () => { updateTopH(); setSheet(sheetState); placeBattery(); if (st.sim) drawRibbon(); });
+
+/* =====================================================================
+   Actions (event delegation for panel, popups and map overlays)
+   ===================================================================== */
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  const act = b.dataset.act, id = b.dataset.id;
+  switch (act) {
+    case 'route': selectRoute(+b.dataset.i); break;
+    case 'start': startDrive(); break;
+    case 'share-trip': shareTrip(); break;
+    case 'share-station': { const s = findStation(id); if (s) shareStation(s); break; }
+    case 'zoom': {
+      const s = findStation(id);
+      if (!s) break;
+      if (isPhone()) setSheet('peek');
+      map.setView([s.lat, s.lng], Math.max(map.getZoom(), 14), { animate: !reduceMotion });
+      setTimeout(() => L.popup({ maxWidth: 310 }).setLatLng([s.lat, s.lng]).setContent(stationPopup(s)).openOn(map), reduceMotion ? 0 : 350);
+      break;
+    }
+    case 'add-stop':
+    case 'remove-stop': {
+      if (!st.meta) break;
+      const ids = st.custom ? st.custom.slice() : st.meta.stops.map(s => s.id);
+      st.custom = act === 'add-stop' ? [...new Set([...ids, id])] : ids.filter(x => x !== id);
+      map.closePopup();
+      toast(act === 'add-stop' ? 'Added. Charging amounts updated.' : 'Stop removed.');
+      replan(0);
+      break;
+    }
+    case 'auto': st.custom = null; replan(0); break;
+    case 'retry': { const token = ++planToken; analyzeBase(token); break; }
+    case 'tab': st.listTab = b.dataset.tab; st.listAll = false; renderAll(); break;
+    case 'list-all': st.listAll = true; renderAll(); break;
+    case 'load-l2': loadL2(); break;
+    case 'here-from':
+    case 'here-to': {
+      const lat = +b.dataset.lat, lng = +b.dataset.lng;
+      map.closePopup();
+      const place = (await reverseGeocode(lat, lng)) || { title: 'Dropped pin', sub: `${lat.toFixed(5)}, ${lng.toFixed(5)}` };
+      setPlace(act === 'here-from' ? 'from' : 'to', { ...place, lat, lng });
+      break;
+    }
+    case 'example':
+    case 'recent': {
+      const list = act === 'example' ? window.__examples : store.get('recent', []);
+      const t = list[+b.dataset.i];
+      if (!t) break;
+      if (t.from.isMe) { setPlace('to', t.to, { noPlan: true }); useMyLocation('from'); break; }
+      setPlace('from', t.from, { noPlan: true });
+      setPlace('to', t.to);
+      break;
+    }
+    case 'filter': {
+      const k = b.dataset.k;
+      S.filters[k] = !S.filters[k];
+      saveSettings();
+      renderChips();
+      if (k === 'l2' && S.filters.l2 && st.base && !st.l2) loadL2();
+      drawStations();
+      break;
+    }
+    case 'style': S.mapStyle = b.dataset.style; saveSettings(); applyMapStyle(); $('#layerMenu').hidden = true; $('#layersBtn').setAttribute('aria-expanded', 'false'); break;
+  }
+});
+document.addEventListener('change', e => {
+  const q = e.target.closest('[data-quick]');
+  if (!q) return;
+  setByPath(q.dataset.quick, q.type === 'checkbox' ? q.checked : q.value);
+  saveSettings(); syncSettingsForm(); renderCarChip();
+  if (st.base) replan(0);
+});
+async function loadL2() {
+  if (!st.base || st.l2Loading) return;
+  st.l2Loading = true;
+  if (st.listTab === 'l2') renderAll();
+  try {
+    const line = simplifyTo(st.base.coords, 400);
+    const wkt = 'LINESTRING(' + line.map(p => `${p[1].toFixed(5)} ${p[0].toFixed(5)}`).join(', ') + ')';
+    const [a, b] = await Promise.all([
+      nlr('nearby-route.json', { body: { route: wkt, distance: '1', fuel_type: 'ELEC', status: 'E', access: 'public', ev_charging_level: '2', limit: '200', country: 'all' } }),
+      nlr('nearest.json', { query: { latitude: st.to.lat.toFixed(5), longitude: st.to.lng.toFixed(5), radius: '10', fuel_type: 'ELEC', status: 'E', access: 'public', ev_charging_level: '2', limit: '60' } }),
+    ]);
+    const seen = new Set(st.stations.map(s => s.id)), list = [];
+    for (const r of [...(a.fuel_stations || []), ...(b.fuel_stations || [])]) {
+      if (seen.has(String(r.id))) continue;
+      seen.add(String(r.id));
+      const s = parseStation(r);
+      if (!isFinite(s.lat)) continue;
+      const p = project(st.baseProf, s.lat, s.lng);
+      s.x = p.x; s.off = p.off;
+      assess(s);
+      if (s.a.cat === 'l2' || s.a.cat === 'none') list.push(s);
+    }
+    st.l2 = list;
+    if (!S.filters.l2) { S.filters.l2 = true; saveSettings(); renderChips(); }
+    toast(`${list.length} Level 2 chargers loaded`);
+  } catch (e) {
+    toast(nlrError(e), 5000);
+  } finally {
+    st.l2Loading = false;
+    drawStations(); renderAll();
+  }
+}
+
+/* Map chips and layer menu */
+function renderChips() {
+  const f = S.filters;
+  const chip = (k, label, c) => `<button class="mchip" data-act="filter" data-k="${k}" aria-pressed="${!!f[k]}"><span class="dot" style="--c:${c}"></span>${label}</button>`;
+  $('#mapChips').innerHTML = chip('native', 'Tesla & NACS', 'var(--native)') + chip('adapter', 'Via adapter', 'var(--adapter)') + chip('l2', 'Level 2', 'var(--level2)') + chip('none', 'Not compatible', 'var(--none)');
+}
+function renderLayerMenu() {
+  const opts = [['auto', 'Match appearance'], ['light', 'Map'], ['dark', 'Dark map'], ['sat', 'Satellite']];
+  $('#layerMenu').innerHTML = opts.map(([k, l]) => `<button data-act="style" data-style="${k}" aria-pressed="${S.mapStyle === k}">${l}</button>`).join('');
+}
+$('#layersBtn').addEventListener('click', () => {
+  const m = $('#layerMenu');
+  m.hidden = !m.hidden;
+  $('#layersBtn').setAttribute('aria-expanded', String(!m.hidden));
+});
+$('#locateBtn').addEventListener('click', async () => {
+  try {
+    const p = await myLocation();
+    showMe(p);
+    map.setView([p.lat, p.lng], Math.max(map.getZoom(), 13), { animate: !reduceMotion });
+  } catch (e) { toast(e.message, 4000); }
+});
+$('#locateFrom').addEventListener('click', () => useMyLocation('from'));
+$('#swapBtn').addEventListener('click', () => {
+  const a = st.from, b = st.to;
+  st.from = null; st.to = null;
+  if (b) setPlace('from', b, { noPlan: true }); else $('#fromInput').value = '';
+  if (a) setPlace('to', a, { noPlan: true }); else $('#toInput').value = '';
+  if (st.from && st.to) planRoute();
+});
+$('#compactTrip').addEventListener('click', () => { $('#topcard').classList.remove('compact'); updateTopH(); setTimeout(() => $('#toInput').focus(), 50); });
+$('#departAt').addEventListener('change', () => {
+  if (!st.base) return;
+  if (S.weather === 'auto') { const token = ++planToken; analyzeBase(token); } else renderAll();
+});
+for (const k of ['socNow', 'maxCharge', 'destReserve']) {
+  $('#' + k).addEventListener('input', e => {
+    S[k] = +e.target.value;
+    $('#' + k + 'Out').textContent = `${S[k]}%`;
+    saveSettings();
+    replan(350);
+  });
+}
+
+/* Sharing */
+async function share(data, fallbackText) {
+  if (navigator.share) {
+    try { await navigator.share(data); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  try { await navigator.clipboard.writeText(fallbackText); toast('Copied. Paste it into the Tesla app or a message.'); }
+  catch { toast('Sharing isn’t available here. Long-press the Google Maps button to copy its link.', 4500); }
+}
+function shareStation(s) {
+  const url = gmapsPlace(s);
+  share({ title: s.name, text: `${s.name}\n${s.addr}`, url }, `${s.name}\n${s.addr}\n${url}`);
+}
+function shareTrip() {
+  const stops = googleStops().slice(0, 9);
+  const url = gmapsDir({ origin: st.from.isMe ? null : st.from, destination: st.to, waypoints: stops });
+  const lines = [`${st.from.title} → ${st.to.title}`, ...st.sim.stops.map((p, i) => `${i + 1}. ${p.st.name} (${pct(p.arriveSoc)} → ${pct(p.departSoc)})`)];
+  share({ title: `${st.from.title} → ${st.to.title}`, text: lines.join('\n'), url }, lines.join('\n') + '\n' + url);
+}
+
+/* =====================================================================
+   Settings dialog
+   ===================================================================== */
+function getByPath(p) { return p.split('.').reduce((o, k) => (o == null ? o : o[k]), S); }
+function setByPath(p, v) {
+  const ks = p.split('.'), last = ks.pop();
+  const o = ks.reduce((acc, k) => acc[k], S);
+  const cur = o[last];
+  o[last] = typeof cur === 'number' ? (isFinite(+v) ? +v : cur) : v;
+}
+function syncSettingsForm() {
+  const sel = $('#setVehicle');
+  if (!sel.options.length) {
+    sel.innerHTML = Object.entries(VEHICLES).map(([k, v]) => `<option value="${k}">${esc(v.name)} (${esc(v.years)})</option>`).join('') + '<option value="custom">Custom…</option>';
+    $('#setReserve').innerHTML = [5, 8, 10, 12, 15, 20, 25].map(v => `<option value="${v}">${v}%</option>`).join('');
+  }
+  $$('[data-set]').forEach(el => {
+    const v = getByPath(el.dataset.set);
+    if (el.type === 'checkbox') el.checked = !!v; else el.value = v;
+  });
+  $('#customCar').hidden = S.vehicle !== 'custom';
+  $('#tempRow').hidden = S.weather !== 'manual';
+  const qv = $('#quickVehicle');
+  if (qv) qv.value = S.vehicle;
+  $$('[data-quick]').forEach(el => { if (el.type === 'checkbox') el.checked = !!getByPath(el.dataset.quick); });
+}
+$('#settingsForm').addEventListener('change', e => {
+  const el = e.target.closest('[data-set]');
+  if (!el) return;
+  const path = el.dataset.set;
+  if (path === 'corridor') S.corridor = +el.value;
+  else setByPath(path, el.type === 'checkbox' ? el.checked : el.value);
+  saveSettings();
+  syncSettingsForm();
+  renderCarChip();
+  if (path === 'theme') { applyTheme(); return; }
+  if (path === 'colorRoute') { drawRoutes(); return; }
+  if (path === 'voice' || path === 'simulate') { if (st.sim) renderAll(); return; }
+  if (path === 'corridor' || path === 'apiKey' || path === 'weather') { if (st.base) { const token = ++planToken; analyzeBase(token); } return; }
+  replan(0);
+});
+const openSettings = () => { syncSettingsForm(); $('#settingsDlg').showModal(); };
+$('#settingsBtn').addEventListener('click', openSettings);
+$('#compactSettings').addEventListener('click', openSettings);
+$('#carChip').addEventListener('click', openSettings);
+
+/* =====================================================================
+   Drive mode: live GPS, next-turn banner, voice, rerouting
+   ===================================================================== */
+function flatSteps(r) {
+  const out = [];
+  r.legs.forEach((lg, li) => lg.steps.forEach(s => { if (!(s.type === 'depart' && li > 0)) out.push({ ...s, leg: li }); }));
+  return out;
+}
+async function startDrive() {
+  if (!st.final || !st.sim) return;
+  if (!S.simulate && !navigator.geolocation) { toast('Location isn’t available in this browser.'); return; }
+  D.on = true; D.idx = 0; D.x = 0; D.k = 0; D.offN = 0; D.spoken.clear(); D.arrivedLegs.clear(); D.follow = true; D.zoomed = false;
+  D.steps = flatSteps(st.final);
+  document.body.classList.add('driving');
+  $('#drive').hidden = false;
+  map.closePopup();
+  drawRoutes();
+  setTimeout(() => map.invalidateSize(), 50);
+  $('#voiceBtn').innerHTML = ic(S.voice ? 'vol' : 'mute');
+  $('#voiceBtn').setAttribute('aria-pressed', String(!!S.voice));
+  $('#recenterBtn').innerHTML = `${ic('nav', 's')}Re-center`;
+  $('#navIcon').innerHTML = maneuverIcon({ type: 'depart' });
+  $('#navDist').textContent = '—';
+  $('#navText').textContent = S.simulate ? 'Preview: following the route at 12× speed' : 'Getting your location…';
+  if (S.voice && 'speechSynthesis' in window) speak(st.sim.stops.length ? `Starting route. ${st.sim.stops.length} charging ${st.sim.stops.length === 1 ? 'stop' : 'stops'} planned.` : 'Starting route.');
+  try { if (navigator.wakeLock) D.wake = await navigator.wakeLock.request('screen'); } catch { /* not granted */ }
+  if (S.simulate) startSimulation();
+  else D.watch = navigator.geolocation.watchPosition(onFix, err => {
+    $('#navText').textContent = err.code === 1 ? 'Location permission is off. Allow it in your browser to navigate.' : 'Waiting for GPS…';
+  }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
+}
+function endDrive() {
+  D.on = false;
+  if (D.watch != null) navigator.geolocation.clearWatch(D.watch);
+  D.watch = null;
+  clearInterval(D.sim); D.sim = null;
+  if (D.marker) { map.removeLayer(D.marker); D.marker = null; }
+  try { D.wake && D.wake.release(); } catch { /* ignore */ }
+  D.wake = null;
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+  document.body.classList.remove('driving');
+  $('#drive').hidden = true;
+  drawRoutes();
+  setTimeout(() => { map.invalidateSize(); fitTrip(); }, 60);
+}
+function startSimulation() {
+  let t = 0;
+  const step = 0.5, mult = 12;
+  D.sim = setInterval(() => {
+    const r = st.final;
+    t += step * mult;
+    const x = xAtSec(r, t);
+    const p = pointAtX(r, x), q = pointAtX(r, Math.min(r.distanceMi, x + 0.03));
+    onFix({ coords: { latitude: p.lat, longitude: p.lng, accuracy: 6, heading: brg(p.lat, p.lng, q.lat, q.lng), speed: 29 } });
+    if (x >= r.distanceMi - 1e-3) { clearInterval(D.sim); D.sim = null; }
+  }, step * 1000);
+}
+function snap(r, lat, lng, hint) {
+  const co = r.coords, n = co.length, kx = Math.cos(toRad(lat));
+  const scan = (a, b) => {
+    let best = { d: Infinity, i: Math.max(0, a), t: 0 };
+    for (let i = Math.max(0, a); i < Math.min(n - 1, b); i++) {
+      const ax = co[i][1] * kx, ay = co[i][0], bx = co[i + 1][1] * kx, by = co[i + 1][0];
+      const px = lng * kx, py = lat, dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+      let t = L2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / L2 : 0;
+      t = clamp(t, 0, 1);
+      const ex = ax + t * dx - px, ey = ay + t * dy - py, d = ex * ex + ey * ey;
+      if (d < best.d) best = { d, i, t };
+    }
+    return best;
+  };
+  let b = scan(hint - 40, hint + 800);
+  if (Math.sqrt(b.d) * 69.05 > 0.25) { const g = scan(0, n - 1); if (g.d < b.d) b = g; }
+  const i = b.i, j = Math.min(n - 1, i + 1);
+  return { i, x: r.cumMi[i] + (r.cumMi[j] - r.cumMi[i]) * b.t, off: Math.sqrt(b.d) * 69.05 };
+}
+function onFix(p) {
+  if (!D.on) return;
+  const c = p.coords, r = st.final;
+  const s = snap(r, c.latitude, c.longitude, D.idx);
+  D.idx = s.i; D.x = s.x;
+  D.pos = { lat: c.latitude, lng: c.longitude, acc: c.accuracy || 20, heading: c.heading, speed: c.speed };
+  let heading = c.heading;
+  if (heading == null || isNaN(heading)) { const a = pointAtX(r, s.x), b = pointAtX(r, Math.min(r.distanceMi, s.x + 0.03)); heading = brg(a.lat, a.lng, b.lat, b.lng); }
+  const html = `<div class="nav-arrow" style="transform:rotate(${Math.round(heading)}deg)"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="na" d="M12 2.5 19.5 21 12 17 4.5 21z"/></svg></div>`;
+  if (!D.marker) D.marker = L.marker([c.latitude, c.longitude], { icon: L.divIcon({ className: 'me-ic', html, iconSize: [52, 52], iconAnchor: [26, 26] }), interactive: false, zIndexOffset: 1000 }).addTo(map);
+  else { D.marker.setLatLng([c.latitude, c.longitude]); const el = D.marker.getElement(); if (el) el.querySelector('.nav-arrow').style.transform = `rotate(${Math.round(heading)}deg)`; }
+  if (D.follow) followTo(L.latLng(c.latitude, c.longitude));
+  const tol = Math.max(0.06, (D.pos.acc / 1609.344) * 1.5);
+  if (!S.simulate && s.off > tol && D.pos.acc < 60) {
+    if (++D.offN >= 3 && Date.now() - D.lastReroute > 20000) reroute();
+  } else D.offN = 0;
+  updateBanner();
+}
+/* Keep the car in the lower part of the screen so more of the road ahead shows */
+function followTo(ll) {
+  const fast = (D.pos && D.pos.speed > 20) || S.simulate;
+  const z = D.zoomed ? map.getZoom() : (fast ? 14.5 : 16);
+  D.zoomed = true;
+  const pt = map.project(ll, z).subtract([0, map.getSize().y * 0.2]);
+  map.setView(map.unproject(pt, z), z, { animate: !reduceMotion && !S.simulate });
+}
+function spokenDist(mi) {
+  if (mi >= 0.9) return `${Math.round(mi)} ${Math.round(mi) === 1 ? 'mile' : 'miles'}`;
+  if (mi >= 0.4) return 'half a mile';
+  if (mi >= 0.18) return 'a quarter mile';
+  return `${Math.max(100, Math.round(mi * 5280 / 100) * 100)} feet`;
+}
+function speak(text) {
+  if (!S.voice || !('speechSynthesis' in window)) return;
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'en-US'; u.rate = 1.02;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(u);
+}
+function arriveTextFor(leg) {
+  const stop = st.sim.stops[leg];
+  return stop ? `Arrive at ${stop.st.name}` : `Arrive at ${st.to.title}`;
+}
+function updateBanner() {
+  const steps = D.steps, x = D.x, r = st.final;
+  while (D.k < steps.length - 1 && steps[D.k].atMi <= x + 0.008) D.k++;
+  const s = steps[D.k];
+  if (!s) return;
+  const dist = Math.max(0, s.atMi - x);
+  const text = instruction(s, { arriveText: arriveTextFor(s.leg) });
+  $('#navIcon').innerHTML = maneuverIcon(s);
+  $('#navDist').textContent = fmtMi(dist);
+  $('#navText').innerHTML = instrHTML(text);
+  const nxt = steps[D.k + 1];
+  const then = $('#navThen');
+  if (nxt && nxt.atMi - s.atMi < 0.3 && s.type !== 'arrive') { then.hidden = false; then.innerHTML = `Then ${instrHTML(instruction(nxt, { arriveText: arriveTextFor(nxt.leg) }))}`; }
+  else then.hidden = true;
+  /* voice prompts: far warning on highways, near warning, then at the turn */
+  const fast = (D.pos && D.pos.speed > 18) || S.simulate;
+  const marks = fast ? [1.0, 0.25, 0.04] : [0.25, 0.04];
+  const crossed = marks.filter(m => dist <= m && !D.spoken.has(D.k + ':' + m));
+  if (crossed.length && s.type !== 'depart') {
+    crossed.forEach(m => D.spoken.add(D.k + ':' + m));
+    const m = Math.min(...crossed);
+    const plain = instrText(text);
+    speak(m >= 0.2 ? `In ${spokenDist(dist)}, ${plain}` : plain);
+  }
+  /* arrival at a charging stop or the destination */
+  const legIdx = st.sim.legs.findIndex(l => x <= l.endMi + 0.02);
+  const lg = st.sim.legs[legIdx < 0 ? st.sim.legs.length - 1 : legIdx];
+  if (lg && lg.endMi - x < 0.03 && !D.arrivedLegs.has(lg.i)) {
+    D.arrivedLegs.add(lg.i);
+    const stop = st.sim.stops[lg.i];
+    if (stop) speak(`Arriving at ${stop.st.name}. Charge to ${Math.round(stop.departSoc)} percent, about ${Math.round(stop.chargeMin)} minutes.`);
+    else speak(`You have arrived at ${st.to.title}.`);
+  }
+  /* bottom bar */
+  const tNow = pointAtX(r, x).sec;
+  let remainMin = (r.durationSec - tNow) / 60;
+  const upcoming = st.sim.stops.filter(p => p.x > x + 0.02);
+  remainMin += upcoming.reduce((a, p) => a + p.stayMin, 0);
+  const eta = new Date(Date.now() + remainMin * 60e3);
+  $('#navEta').textContent = fmtClock(eta, new Date());
+  $('#navRemain').textContent = `${fmtMi(Math.max(0, r.distanceMi - x))} · ${fmtDur(remainMin)} left · ~${pct(socAtX(x))} now`;
+  const nextStop = upcoming[0];
+  $('#navNext').innerHTML = nextStop
+    ? `Next charge: <b>${esc(nextStop.st.name)}</b> in ${fmtMi(nextStop.x - x)} · arrive ~${pct(nextStop.arriveSoc)}, charge to ${pct(nextStop.departSoc)}`
+    : `No more charging · arrive with ~${pct(st.sim.arriveSoc)}`;
+}
+async function reroute() {
+  D.lastReroute = Date.now(); D.offN = 0;
+  toast('Off route. Finding a new way…');
+  const r = st.final, x = D.x;
+  const nowSoc = socAtX(x);
+  const remaining = st.sim.stops.filter(p => p.x > x + 0.05);
+  try {
+    const [nr] = await osrmRoute([{ lat: D.pos.lat, lng: D.pos.lng }, ...remaining.map(p => p.st), st.to]);
+    if (!D.on) return;
+    const prof = makeProfile(nr);
+    borrowElevation(prof, st.baseProf);
+    applyWeather(prof, st.wx, Date.now());
+    computeEnergy(prof);
+    const infos = remaining.map(p => ({ st: p.st, T: chargeTable(effKw(p.st)) }));
+    st.final = nr; st.finalProf = prof;
+    st.sim = simulate(nr, prof, infos, remaining.map(p => p.departSoc), clamp(nowSoc, 1, 100));
+    D.steps = flatSteps(nr); D.k = 0; D.idx = 0; D.spoken.clear(); D.arrivedLegs.clear();
+    drawRoutes(); drawStops();
+    hideToast();
+  } catch (e) {
+    toast('Couldn’t reroute. Keep following the line or open Google Maps.', 4000);
+  }
+  void r;
+}
+$('#endBtn').addEventListener('click', endDrive);
+$('#voiceBtn').addEventListener('click', () => {
+  S.voice = !S.voice; saveSettings();
+  $('#voiceBtn').innerHTML = ic(S.voice ? 'vol' : 'mute');
+  $('#voiceBtn').setAttribute('aria-pressed', String(S.voice));
+  if (!S.voice && 'speechSynthesis' in window) speechSynthesis.cancel();
+});
+$('#recenterBtn').addEventListener('click', () => {
+  D.follow = true; $('#recenterBtn').hidden = true;
+  if (D.pos) followTo(L.latLng(D.pos.lat, D.pos.lng));
+});
+map.on('dragstart', () => { if (D.on) { D.follow = false; $('#recenterBtn').hidden = false; } });
+
+/* =====================================================================
+   Toast
+   ===================================================================== */
+let toastTimer = null;
+function toast(msg, ms = 2600) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, ms);
+}
+function hideToast() { $('#toast').classList.remove('show'); }
+
+/* =====================================================================
+   Init
+   ===================================================================== */
+function initIcons() {
+  $('#settingsBtn').innerHTML = ic('sliders');
+  $('#compactSettings').innerHTML = ic('sliders');
+  $('#locateFrom').innerHTML = ic('locate');
+  $('#swapBtn').innerHTML = ic('swap');
+  $('#layersBtn').innerHTML = ic('layers');
+  $('#locateBtn').innerHTML = ic('me');
+  $('#setClose').innerHTML = ic('close');
+}
+function initDepart() {
+  const d = new Date(Date.now() + 5 * 60e3);
+  d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0);
+  const pad = n => String(n).padStart(2, '0');
+  $('#departAt').value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function init() {
+  initIcons(); initDepart(); syncBattery(); syncSettingsForm();
+  renderCarChip(); renderChips(); updateCompact();
+  applyTheme();
+  setSheet(isPhone() ? 'half' : 'half');
+  updateTopH();
+  if (readHash()) { drawEndpoints(); planRoute(); }
+  else {
+    renderEmpty();
+    if (navigator.permissions && navigator.geolocation) {
+      navigator.permissions.query({ name: 'geolocation' }).then(p => {
+        if (p.state === 'granted' && !st.from) myLocation().then(async loc => {
+          showMe(loc);
+          map.setView([loc.lat, loc.lng], 11);
+          const near = await reverseGeocode(loc.lat, loc.lng);
+          if (!st.from) setPlace('from', { lat: loc.lat, lng: loc.lng, title: 'Your location', sub: near ? [near.title, near.sub].filter(Boolean).join(', ') : '', isMe: true }, { noPlan: true });
+        }).catch(() => {});
+      }).catch(() => {});
+    }
+  }
+}
+window.ChargeLine = { st, get S() { return S; }, car, solve, buildNodes, simulate, planRoute, normRoute, makeProfile };
+init();
+})();
+</script>
+</body>
+</html>
